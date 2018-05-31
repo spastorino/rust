@@ -1695,8 +1695,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             "check_access_permissions({:?}, {:?}, {:?})",
             place, kind, is_local_mutation_allowed
         );
-        let mut error_reported = false;
-        match kind {
+        let (mut err, place_err) = match kind {
             Reservation(WriteKind::MutableBorrow(borrow_kind @ BorrowKind::Unique))
             | Reservation(WriteKind::MutableBorrow(borrow_kind @ BorrowKind::Mut { .. }))
             | Write(WriteKind::MutableBorrow(borrow_kind @ BorrowKind::Unique))
@@ -1708,31 +1707,27 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     BorrowKind::Shared => unreachable!(),
                 };
                 match self.is_mutable(place, is_local_mutation_allowed) {
-                    Ok(root_place) => self.add_used_mut(root_place, flow_state),
+                    Ok(root_place) => {
+                        self.add_used_mut(root_place, flow_state);
+                        return false;
+                    }
                     Err(place_err) => {
-                        error_reported = true;
                         let item_msg = self.get_default_err_msg(place);
                         let mut err = self.tcx
                             .cannot_borrow_path_as_mutable(span, &item_msg, Origin::Mir);
                         err.span_label(span, "cannot borrow as mutable");
 
-                        if place != place_err {
-                            if let Some(name) = self.describe_place(place_err) {
-                                err.note(&format!("the value which is causing this path not to be \
-                                    mutable is...: `{}`", name));
-                            }
-                        }
-
-                        err.emit();
+                        (err, place_err)
                     }
                 }
             }
             Reservation(WriteKind::Mutate) | Write(WriteKind::Mutate) => {
                 match self.is_mutable(place, is_local_mutation_allowed) {
-                    Ok(root_place) => self.add_used_mut(root_place, flow_state),
+                    Ok(root_place) => {
+                        self.add_used_mut(root_place, flow_state);
+                        return false;
+                    }
                     Err(place_err) => {
-                        error_reported = true;
-
                         let err_info = if let Place::Projection(
                             box Projection {
                                 base: Place::Local(local),
@@ -1741,11 +1736,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                         ) = *place_err {
                             let locations = self.mir.find_assignments(local);
                             if locations.len() > 0 {
-                                let item_msg = if error_reported {
-                                    self.get_secondary_err_msg(&Place::Local(local))
-                                } else {
-                                    self.get_default_err_msg(place)
-                                };
+                                let item_msg = self.get_secondary_err_msg(&Place::Local(local));
                                 let sp = self.mir.source_info(locations[0]).span;
                                 let mut to_suggest_span = String::new();
                                 if let Ok(src) =
@@ -1765,7 +1756,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                             None
                         };
 
-                        if let Some((err_help_span,
+                        let mut err = if let Some((err_help_span,
                                      err_help_stmt,
                                      to_suggest_span,
                                      item_msg,
@@ -1777,7 +1768,8 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                             if place != place_err {
                                 err.span_label(span, sec_span);
                             }
-                            err.emit()
+
+                            err
                         } else {
                             let item_msg = self.get_default_err_msg(place);
                             let mut err = self.tcx.cannot_assign(span, &item_msg, Origin::Mir);
@@ -1788,8 +1780,11 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                                                        to be mutable is...: `{}`", name));
                                 }
                             }
-                            err.emit();
-                        }
+
+                            err
+                        };
+
+                        (err, place_err)
                     }
                 }
             }
@@ -1807,16 +1802,47 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                             place, kind
                         ),
                     );
+
+                    return true;
                 }
+
+                return false;
             }
-            Activation(..) => {} // permission checks are done at Reservation point.
+            Activation(..) => { return false; } // permission checks are done at Reservation point.
             Read(ReadKind::Borrow(BorrowKind::Unique))
             | Read(ReadKind::Borrow(BorrowKind::Mut { .. }))
             | Read(ReadKind::Borrow(BorrowKind::Shared))
-            | Read(ReadKind::Copy) => {} // Access authorized
+            | Read(ReadKind::Copy) => { return false; } // Access authorized
+        };
+
+        match place_err {
+            &Place::Local(local) => {
+                let local_decl = &self.mir.local_decls[local];
+                if local_decl.is_user_variable && local_decl.mutability == Mutability::Not {
+                    let local_name = local_decl.name.unwrap();
+
+                    err.span_suggestion(
+                        local_decl.source_info.span,
+                        &format!("consider making `{}` mutable", local_name),
+                        format!("mut {}", local_name),
+                    );
+                }
+            }
+
+            &Place::Projection(
+                box Projection {
+                    base: Place::Local(_local),
+                    elem: ProjectionElem::Deref
+                }
+            ) => {
+            }
+
+            _ => {}
         }
 
-        error_reported
+        err.emit();
+
+        false
     }
 
     /// Adds the place into the used mutable variables set

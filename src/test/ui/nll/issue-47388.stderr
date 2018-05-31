@@ -6,6 +6,15 @@ LL |     let fancy_ref = &(&mut fancy);
 LL |     fancy_ref.num = 6; //~ ERROR E0594
    |     ^^^^^^^^^^^^^^^^^ `fancy_ref` is a `&` reference, so the data it refers to cannot be written
 
-error: aborting due to previous error
+error[E0384]: cannot assign twice to immutable variable `fancy_ref.num`
+  --> $DIR/issue-47388.rs:18:5
+   |
+LL |     let fancy_ref = &(&mut fancy);
+   |                     ------------- first assignment to `fancy_ref.num`
+LL |     fancy_ref.num = 6; //~ ERROR E0594
+   |     ^^^^^^^^^^^^^^^^^ cannot assign twice to immutable variable
 
-For more information about this error, try `rustc --explain E0594`.
+error: aborting due to 2 previous errors
+
+Some errors occurred: E0384, E0594.
+For more information about an error, try `rustc --explain E0384`.
