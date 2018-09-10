@@ -28,7 +28,7 @@ use std::usize;
 
 pub use self::impls::{MaybeStorageLive};
 pub use self::impls::{MaybeInitializedPlaces, MaybeUninitializedPlaces};
-pub use self::impls::DefinitelyInitializedPlaces;
+pub use self::impls::{DefinitelyInitializedPlaces, MovingOutStatements};
 pub use self::impls::EverInitializedPlaces;
 pub use self::impls::borrows::Borrows;
 pub use self::impls::HaveBeenBorrowedLocals;
@@ -134,6 +134,38 @@ pub(crate) fn do_dataflow<'a, 'gcx, 'tcx, BD, P>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
 {
     let flow_state = DataflowAnalysis::new(mir, dead_unwinds, bd);
     flow_state.run(tcx, node_id, attributes, p)
+}
+
+pub(crate) fn find_values_in_scope<BD: BitDenotation>(
+    bit: &BD,
+    mir: &Mir<'tcx>,
+    location: Location,
+    ) -> Vec<BD::Idx> {
+    let mut stack = Vec::new();
+    stack.extend(mir.predecessor_locations(location));
+
+    let mut visited = FxHashSet();
+    let mut sets = BlockSets {
+        on_entry: &mut bit.curr_state,
+        gen_set: &mut bit.stmt_gen,
+        kill_set: &mut bit.stmt_kill,
+    };
+
+    'dfs: while let Some(l) = stack.pop() {
+        debug!(
+            "find_values_in_scope: current_location={:?}",
+            l,
+        );
+
+        if !visited.insert(l) {
+            continue;
+        }
+
+        bit.statement_effect(&mut sets, l);
+        stack.extend(mir.predecessor_locations(l));
+    }
+
+    sets
 }
 
 impl<'a, 'gcx: 'tcx, 'tcx: 'a, BD> DataflowAnalysis<'a, 'tcx, BD> where BD: BitDenotation
@@ -508,6 +540,18 @@ impl<'a, E:Idx> BlockSets<'a, E> {
     {
         for j in i {
             self.gen(j.borrow());
+        }
+    }
+
+    fn gen_all_and_assert_dead<I>(&mut self, i: I)
+        where I: IntoIterator,
+        I::Item: Borrow<E>
+    {
+        for j in i {
+            let j = j.borrow();
+            let retval = self.gen_set.add(j);
+            self.kill_set.remove(j);
+            assert!(retval);
         }
     }
 

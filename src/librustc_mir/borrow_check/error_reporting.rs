@@ -524,77 +524,12 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
     }
 
     fn get_moved_indexes(&mut self, context: Context, mpi: MovePathIndex) -> Vec<MoveOutIndex> {
-        let mir = self.mir;
+        let mos = MovingOutStatements::new(self.tcx, self.mir, MoveDataParamEnv {
+            move_data: self.move_data,
+            param_env: self.param_env,
+        });
 
-        let mut stack = Vec::new();
-        stack.extend(mir.predecessor_locations(context.loc));
-
-        let mut visited = FxHashSet();
-        let mut result = vec![];
-
-        'dfs: while let Some(l) = stack.pop() {
-            debug!(
-                "report_use_of_moved_or_uninitialized: current_location={:?}",
-                l
-            );
-
-            if !visited.insert(l) {
-                continue;
-            }
-
-            // check for moves
-            let stmt_kind = mir[l.block]
-                .statements
-                .get(l.statement_index)
-                .map(|s| &s.kind);
-            if let Some(StatementKind::StorageDead(..)) = stmt_kind {
-                // this analysis only tries to find moves explicitly
-                // written by the user, so we ignore the move-outs
-                // created by `StorageDead` and at the beginning
-                // of a function.
-            } else {
-                for moi in &self.move_data.loc_map[l] {
-                    debug!("report_use_of_moved_or_uninitialized: moi={:?}", moi);
-                    if self.move_data.moves[*moi].path == mpi {
-                        debug!("report_use_of_moved_or_uninitialized: found");
-                        result.push(*moi);
-
-                        // Strictly speaking, we could continue our DFS here. There may be
-                        // other moves that can reach the point of error. But it is kind of
-                        // confusing to highlight them.
-                        //
-                        // Example:
-                        //
-                        // ```
-                        // let a = vec![];
-                        // let b = a;
-                        // let c = a;
-                        // drop(a); // <-- current point of error
-                        // ```
-                        //
-                        // Because we stop the DFS here, we only highlight `let c = a`,
-                        // and not `let b = a`. We will of course also report an error at
-                        // `let c = a` which highlights `let b = a` as the move.
-                        continue 'dfs;
-                    }
-                }
-            }
-
-            // check for inits
-            let mut any_match = false;
-            drop_flag_effects::for_location_inits(self.tcx, self.mir, self.move_data, l, |m| {
-                if m == mpi {
-                    any_match = true;
-                }
-            });
-            if any_match {
-                continue 'dfs;
-            }
-
-            stack.extend(mir.predecessor_locations(l));
-        }
-
-        result
+        dataflow::find_values_in_scope(mos, self.mir, context.loc)
     }
 
     pub(super) fn report_illegal_mutation_of_borrowed(
