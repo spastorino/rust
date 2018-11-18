@@ -2128,7 +2128,7 @@ impl<'tcx> NeoPlace<'tcx> {
         self,
         tcx: TyCtxt<'_, '_, 'tcx>,
         adt_def: &'tcx AdtDef,
-        variant_index: usize,
+        variant_index: VariantIdx,
     ) -> Self {
         self.elem(tcx, ProjectionElem::Downcast(adt_def, variant_index))
     }
