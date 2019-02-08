@@ -124,7 +124,7 @@ impl MirPass for CopyPropagation {
                     }
                 }
 
-                changed = action.perform(mir, &def_use_analysis, dest_local, location) || changed;
+                changed = action.perform(mir, tcx, &def_use_analysis, dest_local, location) || changed;
                 // FIXME(pcwalton): Update the use-def chains to delete the instructions instead of
                 // regenerating the chains.
                 break
@@ -184,7 +184,7 @@ enum Action<'tcx> {
     PropagateConstant(Constant<'tcx>),
 }
 
-impl<'tcx> Action<'tcx> {
+impl<'a, 'tcx: 'a> Action<'tcx> {
     fn local_copy(mir: &Mir<'tcx>, def_use_analysis: &DefUseAnalysis<'_>, src_place: &Place<'tcx>)
                   -> Option<Action<'tcx>> {
         // The source must be a local.
@@ -241,10 +241,11 @@ impl<'tcx> Action<'tcx> {
 
     fn perform(self,
                mir: &mut Mir<'tcx>,
+               tcx: TyCtxt<'a, 'tcx, 'tcx>,
                def_use_analysis: &DefUseAnalysis<'tcx>,
                dest_local: Local,
                location: Location)
-               -> bool {
+        -> bool {
         match self {
             Action::PropagateLocalCopy(src_local) => {
                 // Eliminate the destination and the assignment.
@@ -267,7 +268,7 @@ impl<'tcx> Action<'tcx> {
                 }
 
                 // Replace all uses of the destination local with the source local.
-                def_use_analysis.replace_all_defs_and_uses_with(dest_local, mir, src_local);
+                def_use_analysis.replace_all_defs_and_uses_with(dest_local, mir, tcx, src_local);
 
                 // Finally, zap the now-useless assignment instruction.
                 debug!("  Deleting assignment");
@@ -291,7 +292,8 @@ impl<'tcx> Action<'tcx> {
 
                 // Replace all uses of the destination local with the constant.
                 let mut visitor = ConstantPropagationVisitor::new(dest_local,
-                                                                  src_constant);
+                                                                  src_constant,
+                                                                  tcx);
                 for dest_place_use in &dest_local_info.defs_and_uses {
                     visitor.visit_location(mir, dest_place_use.location)
                 }
@@ -320,24 +322,30 @@ impl<'tcx> Action<'tcx> {
     }
 }
 
-struct ConstantPropagationVisitor<'tcx> {
+struct ConstantPropagationVisitor<'a, 'tcx: 'a> {
     dest_local: Local,
     constant: Constant<'tcx>,
     uses_replaced: usize,
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
 }
 
-impl<'tcx> ConstantPropagationVisitor<'tcx> {
-    fn new(dest_local: Local, constant: Constant<'tcx>)
-           -> ConstantPropagationVisitor<'tcx> {
+impl<'a, 'tcx> ConstantPropagationVisitor<'a, 'tcx> {
+    fn new(dest_local: Local, constant: Constant<'tcx>, tcx: TyCtxt<'a, 'tcx, 'tcx>)
+           -> ConstantPropagationVisitor<'a, 'tcx> {
         ConstantPropagationVisitor {
             dest_local,
             constant,
             uses_replaced: 0,
+            tcx,
         }
     }
 }
 
-impl<'tcx> MutVisitor<'tcx> for ConstantPropagationVisitor<'tcx> {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for ConstantPropagationVisitor<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_operand(&mut self, operand: &mut Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
 

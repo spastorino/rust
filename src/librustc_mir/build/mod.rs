@@ -156,7 +156,7 @@ pub fn mir_build<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> Mir<'t
 
         // Convert the Mir to global types.
         let mut globalizer = GlobalizeMir {
-            tcx,
+            tcx: infcx.tcx,
             span: mir.span
         };
         globalizer.visit_mir(&mut mir);
@@ -176,12 +176,16 @@ pub fn mir_build<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> Mir<'t
 /// A pass to lift all the types and substitutions in a Mir
 /// to the global tcx. Sadly, we don't have a "folder" that
 /// can change 'tcx so we have to transmute afterwards.
-struct GlobalizeMir<'a, 'gcx: 'a> {
-    tcx: TyCtxt<'a, 'gcx, 'gcx>,
+struct GlobalizeMir<'a, 'gcx: 'tcx, 'tcx: 'a> {
+    tcx: TyCtxt<'a, 'gcx, 'tcx>,
     span: Span
 }
 
-impl<'a, 'gcx: 'tcx, 'tcx> MutVisitor<'tcx> for GlobalizeMir<'a, 'gcx> {
+impl<'a, 'gcx: 'tcx, 'tcx: 'a> MutVisitor<'a, 'gcx, 'tcx> for GlobalizeMir<'a, 'gcx, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'gcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_ty(&mut self, ty: &mut Ty<'tcx>, _: TyContext) {
         if let Some(lifted) = self.tcx.lift(ty) {
             *ty = lifted;
@@ -234,9 +238,8 @@ fn create_constructor_shim<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             let mut mir = shim::build_adt_ctor(&infcx, ctor_id, fields, span);
 
             // Convert the Mir to global types.
-            let tcx = infcx.tcx.global_tcx();
             let mut globalizer = GlobalizeMir {
-                tcx,
+                tcx: infcx.tcx,
                 span: mir.span
             };
             globalizer.visit_mir(&mut mir);

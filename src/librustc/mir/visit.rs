@@ -66,9 +66,17 @@ use syntax_pos::Span;
 // variant argument) that does not require visiting, as in
 // `is_cleanup` above.
 
+macro_rules! tcx_req {
+    (mut) => {
+        fn tcx(&self) -> TyCtxt<'a, 'gcx, 'tcx>;
+    };
+
+    () => {};
+}
+
 macro_rules! make_mir_visitor {
-    ($visitor_trait_name:ident, $($mutability:ident)*) => {
-        pub trait $visitor_trait_name<'tcx> {
+    ($visitor_trait_name:ident<$($lt:lifetime $(: $lt_bound:lifetime)*),*>, $($mutability:ident)*) => {
+        pub trait $visitor_trait_name<$($lt$(:$lt_bound)*),*> {
             // Override these, and call `self.super_xxx` to revert back to the
             // default behavior.
 
@@ -794,13 +802,35 @@ macro_rules! make_mir_visitor {
                     }
                 }
 
-                for elem in elems.iter().cloned().rev() {
-                    self.visit_projection_elem(
-                        &$($mutability)* elem.clone(),
-                        location
-                    );
-                }
+                macro_rules! elems_iter {
+                    (mut) => {
+                        let elems = elems.iter().rev().cloned().map(|elem| {
+                            let mut my_elem = elem.clone();
+                            self.visit_projection_elem(
+                                &mut my_elem,
+                                location,
+                            );
+                            my_elem
+                        }).collect::<Vec<_>>();
+
+                        let tcx = self.tcx();
+                        *place = NeoPlace {
+                            base: base.clone(),
+                            elems: tcx.mk_place_elems(elems.into_iter()),
+                        }
+                    };
+
+                    () => {
+                        for elem in elems.iter().rev() {
+                            self.visit_projection_elem(elem, location);
+                        }
+                    };
+                };
+
+                elems_iter!($($mutability)*);
             }
+
+            tcx_req!($($mutability)*);
 
             fn super_static(&mut self,
                             static_: & $($mutability)* Static<'tcx>,
@@ -978,8 +1008,8 @@ macro_rules! make_mir_visitor {
     }
 }
 
-make_mir_visitor!(Visitor,);
-make_mir_visitor!(MutVisitor,mut);
+make_mir_visitor!(Visitor<'tcx>,);
+make_mir_visitor!(MutVisitor<'a, 'gcx: 'tcx, 'tcx: 'a>, mut);
 
 pub trait MirVisitable<'tcx> {
     fn apply(&self, location: Location, visitor: &mut dyn Visitor<'tcx>);

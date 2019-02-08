@@ -72,12 +72,17 @@ use crate::util::liveness::{self, IdentityMap};
 
 pub struct StateTransform;
 
-struct RenameLocalVisitor {
+struct RenameLocalVisitor<'a, 'tcx: 'a> {
     from: Local,
     to: Local,
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
 }
 
-impl<'tcx> MutVisitor<'tcx> for RenameLocalVisitor {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for RenameLocalVisitor<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_local(&mut self,
                    local: &mut Local,
                    _: PlaceContext<'tcx>,
@@ -88,9 +93,15 @@ impl<'tcx> MutVisitor<'tcx> for RenameLocalVisitor {
     }
 }
 
-struct DerefArgVisitor;
+struct DerefArgVisitor<'a, 'tcx: 'a> {
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+}
 
-impl<'tcx> MutVisitor<'tcx> for DerefArgVisitor {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for DerefArgVisitor<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_local(&mut self,
                    local: &mut Local,
                    _: PlaceContext<'tcx>,
@@ -113,11 +124,16 @@ impl<'tcx> MutVisitor<'tcx> for DerefArgVisitor {
     }
 }
 
-struct PinArgVisitor<'tcx> {
+struct PinArgVisitor<'a, 'tcx: 'a> {
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
     ref_gen_ty: Ty<'tcx>,
 }
 
-impl<'tcx> MutVisitor<'tcx> for PinArgVisitor<'tcx> {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for PinArgVisitor<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_local(&mut self,
                    local: &mut Local,
                    _: PlaceContext<'tcx>,
@@ -212,7 +228,11 @@ impl<'a, 'tcx> TransformVisitor<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> MutVisitor<'tcx> for TransformVisitor<'a, 'tcx> {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for TransformVisitor<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_local(&mut self,
                    local: &mut Local,
                    _: PlaceContext<'tcx>,
@@ -312,7 +332,9 @@ fn make_generator_state_argument_indirect<'a, 'tcx>(
     mir.local_decls.raw[1].ty = ref_gen_ty;
 
     // Add a deref to accesses of the generator state
-    DerefArgVisitor.visit_mir(mir);
+    DerefArgVisitor {
+        tcx,
+    }.visit_mir(mir);
 }
 
 fn make_generator_state_argument_pinned<'a, 'tcx>(
@@ -329,12 +351,13 @@ fn make_generator_state_argument_pinned<'a, 'tcx>(
     mir.local_decls.raw[1].ty = pin_ref_gen_ty;
 
     // Add the Pin field access to accesses of the generator state
-    PinArgVisitor { ref_gen_ty }.visit_mir(mir);
+    PinArgVisitor { tcx, ref_gen_ty }.visit_mir(mir);
 }
 
-fn replace_result_variable<'tcx>(
+fn replace_result_variable<'a, 'tcx: 'a>(
     ret_ty: Ty<'tcx>,
     mir: &mut Mir<'tcx>,
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
 ) -> Local {
     let source_info = source_info(mir);
     let new_ret = LocalDecl {
@@ -355,6 +378,7 @@ fn replace_result_variable<'tcx>(
     RenameLocalVisitor {
         from: RETURN_PLACE,
         to: new_ret_local,
+        tcx,
     }.visit_mir(mir);
 
     new_ret_local
@@ -908,7 +932,7 @@ impl MirPass for StateTransform {
 
         // We rename RETURN_PLACE which has type mir.return_ty to new_ret_local
         // RETURN_PLACE then is a fresh unused local with type ret_ty.
-        let new_ret_local = replace_result_variable(ret_ty, mir);
+        let new_ret_local = replace_result_variable(ret_ty, mir, tcx);
 
         // Extract locals which are live across suspension point into `layout`
         // `remap` gives a mapping from local indices onto generator struct indices

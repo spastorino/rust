@@ -19,13 +19,21 @@ impl MirPass for NoLandingPads {
 
 pub fn no_landing_pads<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, mir: &mut Mir<'tcx>) {
     if tcx.sess.no_landing_pads() {
-        NoLandingPadsVisitor.visit_mir(mir);
+        NoLandingPadsVisitor {
+            tcx,
+        }.visit_mir(mir);
     }
 }
 
-pub struct NoLandingPadsVisitor;
+pub struct NoLandingPadsVisitor<'a, 'tcx: 'a> {
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+}
 
-impl<'tcx> MutVisitor<'tcx> for NoLandingPadsVisitor {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for NoLandingPadsVisitor<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_terminator(&mut self,
                         bb: BasicBlock,
                         terminator: &mut Terminator<'tcx>,

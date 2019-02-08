@@ -2,6 +2,7 @@
 
 use rustc::mir::{Local, Location, Mir};
 use rustc::mir::visit::{PlaceContext, MutVisitor, Visitor};
+use rustc::ty::TyCtxt;
 use rustc_data_structures::indexed_vec::IndexVec;
 use std::marker::PhantomData;
 use std::mem;
@@ -50,23 +51,29 @@ impl<'tcx> DefUseAnalysis<'tcx> {
         &self.info[local]
     }
 
-    fn mutate_defs_and_uses<F>(&self, local: Local, mir: &mut Mir<'tcx>, mut callback: F)
-                               where F: for<'a> FnMut(&'a mut Local,
-                                                      PlaceContext<'tcx>,
-                                                      Location) {
-        for place_use in &self.info[local].defs_and_uses {
-            MutateUseVisitor::new(local,
-                                  &mut callback,
-                                  mir).visit_location(mir, place_use.location)
+    fn mutate_defs_and_uses<F>(&self,
+                               local: Local,
+                               mir: &mut Mir<'tcx>,
+                               tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                               mut callback: F)
+        where F: for<'b> FnMut(&'b mut Local,
+              PlaceContext<'tcx>,
+              Location) {
+            for place_use in &self.info[local].defs_and_uses {
+                MutateUseVisitor::new(tcx,
+                                      local,
+                                      &mut callback,
+                                      mir).visit_location(mir, place_use.location)
+            }
         }
-    }
 
     /// FIXME(pcwalton): This should update the def-use chains.
     pub fn replace_all_defs_and_uses_with(&self,
                                           local: Local,
                                           mir: &mut Mir<'tcx>,
+                                          tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                           new_local: Local) {
-        self.mutate_defs_and_uses(local, mir, |local, _, _| *local = new_local)
+        self.mutate_defs_and_uses(local, mir, tcx, |local, _, _| *local = new_local)
     }
 }
 
@@ -120,17 +127,19 @@ impl<'tcx> Info<'tcx> {
     }
 }
 
-struct MutateUseVisitor<'tcx, F> {
+struct MutateUseVisitor<'a, 'tcx: 'a, F> {
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
     query: Local,
     callback: F,
     phantom: PhantomData<&'tcx ()>,
 }
 
-impl<'tcx, F> MutateUseVisitor<'tcx, F> {
-    fn new(query: Local, callback: F, _: &Mir<'tcx>)
-           -> MutateUseVisitor<'tcx, F>
-           where F: for<'a> FnMut(&'a mut Local, PlaceContext<'tcx>, Location) {
+impl<'a, 'tcx, F> MutateUseVisitor<'a, 'tcx, F> {
+    fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>, query: Local, callback: F, _: &Mir<'tcx>)
+           -> MutateUseVisitor<'a, 'tcx, F>
+           where F: for<'b> FnMut(&'b mut Local, PlaceContext<'tcx>, Location) {
         MutateUseVisitor {
+            tcx,
             query,
             callback,
             phantom: PhantomData,
@@ -138,8 +147,12 @@ impl<'tcx, F> MutateUseVisitor<'tcx, F> {
     }
 }
 
-impl<'tcx, F> MutVisitor<'tcx> for MutateUseVisitor<'tcx, F>
-              where F: for<'a> FnMut(&'a mut Local, PlaceContext<'tcx>, Location) {
+impl<'a, 'tcx, F> MutVisitor<'a, 'tcx, 'tcx> for MutateUseVisitor<'a, 'tcx, F>
+              where F: for<'b> FnMut(&'b mut Local, PlaceContext<'tcx>, Location) {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_local(&mut self,
                     local: &mut Local,
                     context: PlaceContext<'tcx>,

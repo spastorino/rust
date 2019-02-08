@@ -353,7 +353,11 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
 }
 
 /// Replaces all temporaries with their promoted counterparts.
-impl<'a, 'tcx> MutVisitor<'tcx> for Promoter<'a, 'tcx> {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for Promoter<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_local(&mut self,
                    local: &mut Local,
                    _: PlaceContext<'tcx>,

@@ -317,7 +317,7 @@ impl MirPass for SimplifyLocals {
 
         let map = make_local_map(&mut mir.local_decls, marker.locals);
         // Update references to all vars and tmps now
-        LocalUpdater { map }.visit_mir(mir);
+        LocalUpdater { map, tcx }.visit_mir(mir);
         mir.local_decls.shrink_to_fit();
     }
 }
@@ -355,11 +355,16 @@ impl<'tcx> Visitor<'tcx> for DeclMarker {
     }
 }
 
-struct LocalUpdater {
+struct LocalUpdater<'a, 'tcx: 'a> {
     map: IndexVec<Local, Option<Local>>,
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
 }
 
-impl<'tcx> MutVisitor<'tcx> for LocalUpdater {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for LocalUpdater<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &mut BasicBlockData<'tcx>) {
         // Remove unnecessary StorageLive and StorageDead annotations.
         data.statements.retain(|stmt| {

@@ -474,6 +474,7 @@ impl<'a, 'tcx> Inliner<'a, 'tcx> {
 
                 let bb_len = caller_mir.basic_blocks().len();
                 let mut integrator = Integrator {
+                    tcx: self.tcx,
                     block_idx: bb_len,
                     args: &args,
                     local_map,
@@ -628,6 +629,7 @@ fn type_size_of<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
  * stuff.
  */
 struct Integrator<'a, 'tcx: 'a> {
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
     block_idx: usize,
     args: &'a [Local],
     local_map: IndexVec<Local, Local>,
@@ -648,7 +650,11 @@ impl<'a, 'tcx> Integrator<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> MutVisitor<'tcx> for Integrator<'a, 'tcx> {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for Integrator<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_local(&mut self,
                    local: &mut Local,
                    _ctxt: PlaceContext<'tcx>,

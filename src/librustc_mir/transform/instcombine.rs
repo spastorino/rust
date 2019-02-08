@@ -30,15 +30,20 @@ impl MirPass for InstCombine {
         };
 
         // Then carry out those optimizations.
-        MutVisitor::visit_mir(&mut InstCombineVisitor { optimizations }, mir);
+        MutVisitor::visit_mir(&mut InstCombineVisitor { optimizations, tcx }, mir);
     }
 }
 
-pub struct InstCombineVisitor<'tcx> {
+pub struct InstCombineVisitor<'a, 'tcx: 'a> {
     optimizations: OptimizationList<'tcx>,
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
 }
 
-impl<'tcx> MutVisitor<'tcx> for InstCombineVisitor<'tcx> {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for InstCombineVisitor<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_rvalue(&mut self, rvalue: &mut Rvalue<'tcx>, location: Location) {
         if self.optimizations.and_stars.remove(&location) {
             debug!("Replacing `&*`: {:?}", rvalue);

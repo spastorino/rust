@@ -1,5 +1,5 @@
 use rustc::ty::subst::Substs;
-use rustc::ty::{self, ClosureSubsts, GeneratorSubsts, Ty, TypeFoldable};
+use rustc::ty::{self, ClosureSubsts, GeneratorSubsts, Ty, TyCtxt, TypeFoldable};
 use rustc::mir::{Location, Mir};
 use rustc::mir::visit::{MutVisitor, TyContext};
 use rustc::infer::{InferCtxt, NLLRegionVariableOrigin};
@@ -46,7 +46,11 @@ impl<'a, 'gcx, 'tcx> NLLVisitor<'a, 'gcx, 'tcx> {
     }
 }
 
-impl<'a, 'gcx, 'tcx> MutVisitor<'tcx> for NLLVisitor<'a, 'gcx, 'tcx> {
+impl<'a, 'gcx, 'tcx> MutVisitor<'a, 'gcx, 'tcx> for NLLVisitor<'a, 'gcx, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'gcx, 'tcx> {
+        self.infcx.tcx
+    }
+
     fn visit_ty(&mut self, ty: &mut Ty<'tcx>, ty_context: TyContext) {
         debug!("visit_ty(ty={:?}, ty_context={:?})", ty, ty_context);
 

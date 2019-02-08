@@ -30,19 +30,25 @@ use crate::transform::{MirPass, MirSource};
 
 pub struct CleanAscribeUserType;
 
-pub struct DeleteAscribeUserType;
+pub struct DeleteAscribeUserType<'a, 'tcx: 'a> {
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+}
 
 impl MirPass for CleanAscribeUserType {
     fn run_pass<'a, 'tcx>(&self,
-                          _tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                          tcx: TyCtxt<'a, 'tcx, 'tcx>,
                           _source: MirSource<'tcx>,
                           mir: &mut Mir<'tcx>) {
-        let mut delete = DeleteAscribeUserType;
+        let mut delete = DeleteAscribeUserType { tcx };
         delete.visit_mir(mir);
     }
 }
 
-impl<'tcx> MutVisitor<'tcx> for DeleteAscribeUserType {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for DeleteAscribeUserType<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_statement(&mut self,
                        block: BasicBlock,
                        statement: &mut Statement<'tcx>,
@@ -56,31 +62,40 @@ impl<'tcx> MutVisitor<'tcx> for DeleteAscribeUserType {
 
 pub struct CleanFakeReadsAndBorrows;
 
-#[derive(Default)]
-pub struct DeleteAndRecordFakeReads {
+pub struct DeleteAndRecordFakeReads<'a, 'tcx: 'a> {
     fake_borrow_temporaries: FxHashSet<Local>,
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
 }
 
-pub struct DeleteFakeBorrows {
+pub struct DeleteFakeBorrows<'a, 'tcx: 'a> {
     fake_borrow_temporaries: FxHashSet<Local>,
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
 }
 
 // Removes any FakeReads from the MIR
 impl MirPass for CleanFakeReadsAndBorrows {
     fn run_pass<'a, 'tcx>(&self,
-                          _tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                          tcx: TyCtxt<'a, 'tcx, 'tcx>,
                           _source: MirSource<'tcx>,
                           mir: &mut Mir<'tcx>) {
-        let mut delete_reads = DeleteAndRecordFakeReads::default();
+        let mut delete_reads = DeleteAndRecordFakeReads {
+            fake_borrow_temporaries: FxHashSet::default(),
+            tcx,
+        };
         delete_reads.visit_mir(mir);
         let mut delete_borrows = DeleteFakeBorrows {
             fake_borrow_temporaries: delete_reads.fake_borrow_temporaries,
+            tcx,
         };
         delete_borrows.visit_mir(mir);
     }
 }
 
-impl<'tcx> MutVisitor<'tcx> for DeleteAndRecordFakeReads {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for DeleteAndRecordFakeReads<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_statement(&mut self,
                        block: BasicBlock,
                        statement: &mut Statement<'tcx>,
@@ -98,7 +113,11 @@ impl<'tcx> MutVisitor<'tcx> for DeleteAndRecordFakeReads {
     }
 }
 
-impl<'tcx> MutVisitor<'tcx> for DeleteFakeBorrows {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for DeleteFakeBorrows<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_statement(&mut self,
                        block: BasicBlock,
                        statement: &mut Statement<'tcx>,

@@ -22,7 +22,11 @@ impl<'a, 'tcx> EraseRegionsVisitor<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> MutVisitor<'tcx> for EraseRegionsVisitor<'a, 'tcx> {
+impl<'a, 'tcx> MutVisitor<'a, 'tcx, 'tcx> for EraseRegionsVisitor<'a, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+        self.tcx
+    }
+
     fn visit_ty(&mut self, ty: &mut Ty<'tcx>, _: TyContext) {
         *ty = self.tcx.erase_regions(ty);
         self.super_ty(ty);
