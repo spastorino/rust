@@ -372,22 +372,38 @@ impl<'a, 'gcx, 'tcx> MirBorrowckCtxt<'a, 'gcx, 'tcx> {
             }) if self.mir.local_decls[*local].is_user_variable.is_some() =>
             {
                 let local_decl = &self.mir.local_decls[*local];
+
+                debug!(
+                    "report_mutability_error:\
+                        local={:?}, local_decl={:?},\
+                    )",
+                    local, local_decl,
+                );
                 let suggestion = match local_decl.is_user_variable.as_ref().unwrap() {
                     ClearCrossCrate::Set(mir::BindingForm::ImplicitSelf(_)) => {
                         Some(suggest_ampmut_self(self.infcx.tcx, local_decl))
                     }
 
                     ClearCrossCrate::Set(mir::BindingForm::Var(mir::VarBindingForm {
-                        binding_mode: ty::BindingMode::BindByValue(_),
+                        binding_mode: ty::BindingMode::BindByValue(value),
                         opt_ty_info,
                         ..
-                    })) => Some(suggest_ampmut(
-                        self.infcx.tcx,
-                        self.mir,
-                        *local,
-                        local_decl,
-                        *opt_ty_info,
-                    )),
+                    })) => {
+                        debug!(
+                            "report_mutability_error:\
+                                binding_mode={:?}, opt_ty_info={:?},\
+                            )",
+                            ty::BindingMode::BindByValue(*value), opt_ty_info,
+                        );
+
+                        Some(suggest_ampmut(
+                                self.infcx.tcx,
+                                self.mir,
+                                *local,
+                                local_decl,
+                                *opt_ty_info,
+                        ))
+                    }
 
                     ClearCrossCrate::Set(mir::BindingForm::Var(mir::VarBindingForm {
                         binding_mode: ty::BindingMode::BindByReference(_),

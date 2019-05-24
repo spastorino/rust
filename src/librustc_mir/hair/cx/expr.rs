@@ -126,6 +126,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 kind: ExprKind::Borrow {
                     borrow_kind: deref.mutbl.to_borrow_kind(),
                     arg: expr.to_ref(),
+                    auto_gen: false,
                 },
             };
 
@@ -135,6 +136,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
             ExprKind::Borrow {
                 borrow_kind: m.to_borrow_kind(),
                 arg: expr.to_ref(),
+                auto_gen: true,
             }
         }
         Adjust::Borrow(AutoBorrow::RawPtr(m)) => {
@@ -151,6 +153,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 kind: ExprKind::Borrow {
                     borrow_kind: m.to_borrow_kind(),
                     arg: expr.to_ref(),
+                    auto_gen: false,
                 },
             };
             let cast_expr = Expr {
@@ -317,6 +320,7 @@ fn make_mirror_unadjusted<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
             ExprKind::Borrow {
                 borrow_kind: mutbl.to_borrow_kind(),
                 arg: expr.to_ref(),
+                auto_gen: false,
             }
         }
 
@@ -1210,6 +1214,7 @@ fn capture_freevar<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 kind: ExprKind::Borrow {
                     borrow_kind,
                     arg: captured_var.to_ref(),
+                    auto_gen: false,
                 },
             }.to_ref()
         }
