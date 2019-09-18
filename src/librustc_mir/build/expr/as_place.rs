@@ -16,8 +16,15 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     where
         M: Mirror<'tcx, Output = Expr<'tcx>>,
     {
+        self.as_place2(block, expr, Vec::new())
+    }
+
+    fn as_place2<M>(&mut self, block: BasicBlock, expr: M, projection: Vec<PlaceElem<'tcx>>) -> BlockAnd<Place<'tcx>>
+    where
+        M: Mirror<'tcx, Output = Expr<'tcx>>,
+    {
         let expr = self.hir.mirror(expr);
-        self.expr_as_place(block, expr, Mutability::Mut)
+        self.expr_as_place(block, expr, Mutability::Mut, projection)
     }
 
     /// Compile `expr`, yielding a place that we can move from etc.
@@ -29,199 +36,217 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     where
         M: Mirror<'tcx, Output = Expr<'tcx>>,
     {
+        self.as_read_only_place2(block, expr, Vec::new())
+    }
+
+    fn as_read_only_place2<M>(&mut self, block: BasicBlock, expr: M, projection: Vec<PlaceElem<'tcx>>) -> BlockAnd<Place<'tcx>>
+    where
+        M: Mirror<'tcx, Output = Expr<'tcx>>,
+    {
         let expr = self.hir.mirror(expr);
-        self.expr_as_place(block, expr, Mutability::Not)
+        self.expr_as_place(block, expr, Mutability::Not, projection)
     }
 
     fn expr_as_place(
         &mut self,
         mut block: BasicBlock,
-        expr: Expr<'tcx>,
+        mut expr: Expr<'tcx>,
         mutability: Mutability,
+        mut projection: Vec<PlaceElem<'tcx>>,
     ) -> BlockAnd<Place<'tcx>> {
-        debug!(
-            "expr_as_place(block={:?}, expr={:?}, mutability={:?})",
-            block, expr, mutability
-        );
-
         let this = self;
-        let expr_span = expr.span;
-        let source_info = this.source_info(expr_span);
-        match expr.kind {
-            ExprKind::Scope {
-                region_scope,
-                lint_level,
-                value,
-            } => this.in_scope((region_scope, source_info), lint_level, |this| {
-                if mutability == Mutability::Not {
-                    this.as_read_only_place(block, value)
-                } else {
-                    this.as_place(block, value)
+
+        loop {
+            debug!(
+                "expr_as_place(block={:?}, expr={:?}, mutability={:?})",
+                block, expr, mutability
+            );
+
+            let expr_span = expr.span;
+            let source_info = this.source_info(expr_span);
+            match expr.kind {
+                ExprKind::Scope {
+                    region_scope,
+                    lint_level,
+                    value,
+                } => return this.in_scope((region_scope, source_info), lint_level, |this| {
+                    if mutability == Mutability::Not {
+                        this.as_read_only_place2(block, value, projection)
+                    } else {
+                        this.as_place2(block, value, projection)
+                    }
+                }),
+                ExprKind::Field { lhs, name } => {
+                    projection.push(PlaceElem::Field(name, expr.ty));
+                    expr = this.hir.mirror(lhs);
                 }
-            }),
-            ExprKind::Field { lhs, name } => {
-                let place = unpack!(block = this.as_place(block, lhs));
-                let place = place.field(name, expr.ty);
-                block.and(place)
-            }
-            ExprKind::Deref { arg } => {
-                let place = unpack!(block = this.as_place(block, arg));
-                let place = place.deref();
-                block.and(place)
-            }
-            ExprKind::Index { lhs, index } => {
-                let (usize_ty, bool_ty) = (this.hir.usize_ty(), this.hir.bool_ty());
+                ExprKind::Deref { arg } => {
+                    projection.push(PlaceElem::Deref);
+                    expr = this.hir.mirror(arg);
+                }
+                ExprKind::Index { lhs, index } => {
+                    let (usize_ty, bool_ty) = (this.hir.usize_ty(), this.hir.bool_ty());
 
-                let slice = unpack!(block = this.as_place(block, lhs));
-                // Making this a *fresh* temporary also means we do not have to worry about
-                // the index changing later: Nothing will ever change this temporary.
-                // The "retagging" transformation (for Stacked Borrows) relies on this.
-                let idx = unpack!(block = this.as_temp(
-                    block,
-                    expr.temp_lifetime,
-                    index,
-                    Mutability::Not,
-                ));
-
-                // bounds check:
-                let (len, lt) = (
-                    this.temp(usize_ty.clone(), expr_span),
-                    this.temp(bool_ty, expr_span),
-                );
-                this.cfg.push_assign(
-                    block,
-                    source_info, // len = len(slice)
-                    &len,
-                    Rvalue::Len(slice.clone()),
-                );
-                this.cfg.push_assign(
-                    block,
-                    source_info, // lt = idx < len
-                    &lt,
-                    Rvalue::BinaryOp(
-                        BinOp::Lt,
-                        Operand::Copy(Place::from(idx)),
-                        Operand::Copy(len.clone()),
-                    ),
-                );
-
-                let msg = BoundsCheck {
-                    len: Operand::Move(len),
-                    index: Operand::Copy(Place::from(idx)),
-                };
-                let success = this.assert(block, Operand::Move(lt), true, msg, expr_span);
-                success.and(slice.index(idx))
-            }
-            ExprKind::SelfRef => block.and(Place::from(Local::new(1))),
-            ExprKind::VarRef { id } => {
-                let place = if this.is_bound_var_in_guard(id) {
-                    let index = this.var_local_id(id, RefWithinGuard);
-                    Place::from(index).deref()
-                } else {
-                    let index = this.var_local_id(id, OutsideGuard);
-                    Place::from(index)
-                };
-                block.and(place)
-            }
-            ExprKind::StaticRef { id } => block.and(Place {
-                base: PlaceBase::Static(Box::new(Static {
-                    ty: expr.ty,
-                    kind: StaticKind::Static,
-                    def_id: id,
-                })),
-                projection: box [],
-            }),
-
-            ExprKind::PlaceTypeAscription { source, user_ty } => {
-                let place = unpack!(block = this.as_place(block, source));
-                if let Some(user_ty) = user_ty {
-                    let annotation_index = this.canonical_user_type_annotations.push(
-                        CanonicalUserTypeAnnotation {
-                            span: source_info.span,
-                            user_ty,
-                            inferred_ty: expr.ty,
-                        }
-                    );
-                    this.cfg.push(
+                    let slice = unpack!(block = this.as_place2(block, lhs, projection));
+                    // Making this a *fresh* temporary also means we do not have to worry about
+                    // the index changing later: Nothing will ever change this temporary.
+                    // The "retagging" transformation (for Stacked Borrows) relies on this.
+                    let idx = unpack!(block = this.as_temp(
                         block,
-                        Statement {
-                            source_info,
-                            kind: StatementKind::AscribeUserType(
-                                box(
-                                    place.clone(),
-                                    UserTypeProjection { base: annotation_index, projs: vec![], }
-                                ),
-                                Variance::Invariant,
-                            ),
-                        },
-                    );
-                }
-                block.and(place)
-            }
-            ExprKind::ValueTypeAscription { source, user_ty } => {
-                let source = this.hir.mirror(source);
-                let temp = unpack!(
-                    block = this.as_temp(block, source.temp_lifetime, source, mutability)
-                );
-                if let Some(user_ty) = user_ty {
-                    let annotation_index = this.canonical_user_type_annotations.push(
-                        CanonicalUserTypeAnnotation {
-                            span: source_info.span,
-                            user_ty,
-                            inferred_ty: expr.ty,
-                        }
-                    );
-                    this.cfg.push(
-                        block,
-                        Statement {
-                            source_info,
-                            kind: StatementKind::AscribeUserType(
-                                box(
-                                    Place::from(temp.clone()),
-                                    UserTypeProjection { base: annotation_index, projs: vec![], },
-                                ),
-                                Variance::Invariant,
-                            ),
-                        },
-                    );
-                }
-                block.and(Place::from(temp))
-            }
+                        expr.temp_lifetime,
+                        index,
+                        Mutability::Not,
+                    ));
 
-            ExprKind::Array { .. }
-            | ExprKind::Tuple { .. }
-            | ExprKind::Adt { .. }
-            | ExprKind::Closure { .. }
-            | ExprKind::Unary { .. }
-            | ExprKind::Binary { .. }
-            | ExprKind::LogicalOp { .. }
-            | ExprKind::Box { .. }
-            | ExprKind::Cast { .. }
-            | ExprKind::Use { .. }
-            | ExprKind::NeverToAny { .. }
-            | ExprKind::Pointer { .. }
-            | ExprKind::Repeat { .. }
-            | ExprKind::Borrow { .. }
-            | ExprKind::Match { .. }
-            | ExprKind::Loop { .. }
-            | ExprKind::Block { .. }
-            | ExprKind::Assign { .. }
-            | ExprKind::AssignOp { .. }
-            | ExprKind::Break { .. }
-            | ExprKind::Continue { .. }
-            | ExprKind::Return { .. }
-            | ExprKind::Literal { .. }
-            | ExprKind::InlineAsm { .. }
-            | ExprKind::Yield { .. }
-            | ExprKind::Call { .. } => {
-                // these are not places, so we need to make a temporary.
-                debug_assert!(match Category::of(&expr.kind) {
-                    Some(Category::Place) => false,
-                    _ => true,
-                });
-                let temp =
-                    unpack!(block = this.as_temp(block, expr.temp_lifetime, expr, mutability));
-                block.and(Place::from(temp))
+                    // bounds check:
+                    let (len, lt) = (
+                        this.temp(usize_ty.clone(), expr_span),
+                        this.temp(bool_ty, expr_span),
+                    );
+                    this.cfg.push_assign(
+                        block,
+                        source_info, // len = len(slice)
+                        &len,
+                        Rvalue::Len(slice.clone()),
+                    );
+                    this.cfg.push_assign(
+                        block,
+                        source_info, // lt = idx < len
+                        &lt,
+                        Rvalue::BinaryOp(
+                            BinOp::Lt,
+                            Operand::Copy(Place::from(idx)),
+                            Operand::Copy(len.clone()),
+                        ),
+                    );
+
+                    let msg = BoundsCheck {
+                        len: Operand::Move(len),
+                        index: Operand::Copy(Place::from(idx)),
+                    };
+                    let success = this.assert(block, Operand::Move(lt), true, msg, expr_span);
+                    return success.and(slice.index(idx));
+                }
+                ExprKind::SelfRef => return block.and(Place {
+                    base: PlaceBase::from(Local::new(1)),
+                    projection: projection.into_boxed_slice(),
+                }),
+                ExprKind::VarRef { id } => {
+                    let index = if this.is_bound_var_in_guard(id) {
+                        projection.push(PlaceElem::Deref);
+                        this.var_local_id(id, RefWithinGuard)
+                    } else {
+                        this.var_local_id(id, OutsideGuard)
+                    };
+
+                    return block.and(Place {
+                        base: PlaceBase::from(index),
+                        projection: projection.into_boxed_slice(),
+                    });
+                }
+                ExprKind::StaticRef { id } => return block.and(Place {
+                    base: PlaceBase::Static(Box::new(Static {
+                        ty: expr.ty,
+                        kind: StaticKind::Static,
+                        def_id: id,
+                    })),
+                    projection: projection.into_boxed_slice(),
+                }),
+
+                ExprKind::PlaceTypeAscription { source, user_ty } => {
+                    let place = unpack!(block = this.as_place(block, source));
+                    if let Some(user_ty) = user_ty {
+                        let annotation_index = this.canonical_user_type_annotations.push(
+                            CanonicalUserTypeAnnotation {
+                                span: source_info.span,
+                                user_ty,
+                                inferred_ty: expr.ty,
+                            }
+                        );
+                        this.cfg.push(
+                            block,
+                            Statement {
+                                source_info,
+                                kind: StatementKind::AscribeUserType(
+                                    box(
+                                        place.clone(),
+                                        UserTypeProjection { base: annotation_index, projs: vec![], }
+                                    ),
+                                    Variance::Invariant,
+                                ),
+                            },
+                        );
+                    }
+                    return block.and(place);
+                }
+                ExprKind::ValueTypeAscription { source, user_ty } => {
+                    let source = this.hir.mirror(source);
+                    let temp = unpack!(
+                        block = this.as_temp(block, source.temp_lifetime, source, mutability)
+                    );
+                    if let Some(user_ty) = user_ty {
+                        let annotation_index = this.canonical_user_type_annotations.push(
+                            CanonicalUserTypeAnnotation {
+                                span: source_info.span,
+                                user_ty,
+                                inferred_ty: expr.ty,
+                            }
+                        );
+                        this.cfg.push(
+                            block,
+                            Statement {
+                                source_info,
+                                kind: StatementKind::AscribeUserType(
+                                    box(
+                                        Place::from(temp.clone()),
+                                        UserTypeProjection { base: annotation_index, projs: vec![], },
+                                    ),
+                                    Variance::Invariant,
+                                ),
+                            },
+                        );
+                    }
+                    return block.and(Place::from(temp));
+                }
+
+                ExprKind::Array { .. }
+                | ExprKind::Tuple { .. }
+                | ExprKind::Adt { .. }
+                | ExprKind::Closure { .. }
+                | ExprKind::Unary { .. }
+                | ExprKind::Binary { .. }
+                | ExprKind::LogicalOp { .. }
+                | ExprKind::Box { .. }
+                | ExprKind::Cast { .. }
+                | ExprKind::Use { .. }
+                | ExprKind::NeverToAny { .. }
+                | ExprKind::Pointer { .. }
+                | ExprKind::Repeat { .. }
+                | ExprKind::Borrow { .. }
+                | ExprKind::Match { .. }
+                | ExprKind::Loop { .. }
+                | ExprKind::Block { .. }
+                | ExprKind::Assign { .. }
+                | ExprKind::AssignOp { .. }
+                | ExprKind::Break { .. }
+                | ExprKind::Continue { .. }
+                | ExprKind::Return { .. }
+                | ExprKind::Literal { .. }
+                | ExprKind::InlineAsm { .. }
+                | ExprKind::Yield { .. }
+                | ExprKind::Call { .. } => {
+                    // these are not places, so we need to make a temporary.
+                    debug_assert!(match Category::of(&expr.kind) {
+                        Some(Category::Place) => false,
+                        _ => true,
+                    });
+                    let temp =
+                        unpack!(block = this.as_temp(block, expr.temp_lifetime, expr, mutability));
+                    return block.and(Place {
+                        base: PlaceBase::from(temp),
+                        projection: projection.into_boxed_slice(),
+                    });
+                }
             }
         }
     }
