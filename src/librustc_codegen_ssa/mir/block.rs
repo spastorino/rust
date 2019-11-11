@@ -2,7 +2,7 @@ use rustc_index::vec::Idx;
 use rustc::middle::lang_items;
 use rustc::ty::{self, Ty, TypeFoldable, Instance};
 use rustc::ty::layout::{self, LayoutOf, HasTyCtxt, FnTypeExt};
-use rustc::mir::{self, Place, PlaceBase, Static, StaticKind};
+use rustc::mir::{self, Place, PlaceBase, Static};
 use rustc::mir::interpret::PanicInfo;
 use rustc_target::abi::call::{ArgType, FnType, PassMode};
 use rustc_target::spec::abi::Abi;
@@ -637,7 +637,8 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                         mir::Operand::Copy(
                             Place {
                                 base: PlaceBase::Static(box Static {
-                                    kind: StaticKind::Promoted(promoted, _),
+                                    promoted,
+                                    substs: _,
                                     ty,
                                     def_id: _,
                                 }),
@@ -647,7 +648,8 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                         mir::Operand::Move(
                             Place {
                                 base: PlaceBase::Static(box Static {
-                                    kind: StaticKind::Promoted(promoted, _),
+                                    promoted,
+                                    substs: _,
                                     ty,
                                     def_id: _,
                                 }),

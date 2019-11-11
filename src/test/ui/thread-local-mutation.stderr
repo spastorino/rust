@@ -1,4 +1,4 @@
-error[E0594]: cannot assign to immutable static item `S`
+error[E0594]: cannot assign to data in a `&` reference
   --> $DIR/thread-local-mutation.rs:11:5
    |
 LL |     S = "after";

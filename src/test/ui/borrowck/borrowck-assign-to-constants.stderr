@@ -1,4 +1,4 @@
-error[E0594]: cannot assign to immutable static item `foo`
+error[E0594]: cannot assign to data in a `&` reference
   --> $DIR/borrowck-assign-to-constants.rs:5:5
    |
 LL |     foo = 6;

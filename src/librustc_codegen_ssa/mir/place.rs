@@ -54,20 +54,6 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
         }
     }
 
-    fn new_thin_place<Bx: BuilderMethods<'a, 'tcx, Value = V>>(
-        bx: &mut Bx,
-        llval: V,
-        layout: TyLayout<'tcx>,
-    ) -> PlaceRef<'tcx, V> {
-        assert!(!bx.cx().type_has_metadata(layout.ty));
-        PlaceRef {
-            llval,
-            llextra: None,
-            layout,
-            align: layout.align.abi
-        }
-    }
-
     pub fn alloca<Bx: BuilderMethods<'a, 'tcx, Value = V>>(
         bx: &mut Bx,
         layout: TyLayout<'tcx>,
@@ -462,7 +448,8 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             mir::PlaceRef {
                 base: mir::PlaceBase::Static(box mir::Static {
                     ty,
-                    kind: mir::StaticKind::Promoted(promoted, substs),
+                    promoted,
+                    substs,
                     def_id,
                 }),
                 projection: [],
@@ -494,20 +481,6 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     }
                 }
             }
-            mir::PlaceRef {
-                base: mir::PlaceBase::Static(box mir::Static {
-                    ty,
-                    kind: mir::StaticKind::Static,
-                    def_id,
-                }),
-                projection: [],
-            } => {
-                // NB: The layout of a static may be unsized as is the case when working
-                // with a static that is an extern_type.
-                let layout = cx.layout_of(self.monomorphize(&ty));
-                let static_ = bx.get_static(*def_id);
-                PlaceRef::new_thin_place(bx, static_, layout)
-            },
             mir::PlaceRef {
                 base,
                 projection: [proj_base @ .., mir::ProjectionElem::Deref],

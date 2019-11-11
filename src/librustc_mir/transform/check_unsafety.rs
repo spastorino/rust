@@ -204,29 +204,8 @@ impl<'a, 'tcx> Visitor<'tcx> for UnsafetyChecker<'a, 'tcx> {
             PlaceBase::Local(..) => {
                 // Locals are safe.
             }
-            PlaceBase::Static(box Static { kind: StaticKind::Promoted(_, _), .. }) => {
+            PlaceBase::Static(_) => {
                 bug!("unsafety checking should happen before promotion")
-            }
-            PlaceBase::Static(box Static { kind: StaticKind::Static, def_id, .. }) => {
-                if self.tcx.is_mutable_static(def_id) {
-                    self.require_unsafe("use of mutable static",
-                        "mutable statics can be mutated by multiple threads: aliasing \
-                         violations or data races will cause undefined behavior",
-                         UnsafetyViolationKind::General);
-                } else if self.tcx.is_foreign_item(def_id) {
-                    let source_info = self.source_info;
-                    let lint_root =
-                        self.source_scope_local_data[source_info.scope].lint_root;
-                    self.register_violations(&[UnsafetyViolation {
-                        source_info,
-                        description: InternedString::intern("use of extern static"),
-                        details: InternedString::intern(
-                            "extern statics are not controlled by the Rust type system: \
-                            invalid data, aliasing violations or data races will cause \
-                            undefined behavior"),
-                        kind: UnsafetyViolationKind::ExternStatic(lint_root)
-                    }], &[]);
-                }
             }
         }
 

@@ -5,14 +5,13 @@ use rustc::hir::GeneratorKind;
 use rustc::mir::{
     AggregateKind, Constant, Field, Local, LocalKind, Location, Operand,
     Place, PlaceBase, PlaceRef, ProjectionElem, Rvalue, Statement, StatementKind,
-    Static, StaticKind, Terminator, TerminatorKind,
+    Static, Terminator, TerminatorKind,
 };
 use rustc::ty::{self, DefIdTree, Ty, TyCtxt};
 use rustc::ty::layout::VariantIdx;
 use rustc::ty::print::Print;
 use rustc_errors::DiagnosticBuilder;
 use syntax_pos::Span;
-use syntax::symbol::sym;
 
 use super::borrow_set::BorrowData;
 use super::MirBorrowckCtxt;
@@ -160,23 +159,11 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             PlaceRef {
                 base:
                     PlaceBase::Static(box Static {
-                        kind: StaticKind::Promoted(..),
                         ..
                     }),
                 projection: [],
             } => {
                 buf.push_str("promoted");
-            }
-            PlaceRef {
-                base:
-                    PlaceBase::Static(box Static {
-                        kind: StaticKind::Static,
-                        def_id,
-                        ..
-                    }),
-                projection: [],
-            } => {
-                buf.push_str(&self.infcx.tcx.item_name(*def_id).to_string());
             }
             PlaceRef {
                 base,
@@ -437,30 +424,6 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                     );
                 }
             }
-        }
-    }
-
-    /// Checks if a place is a thread-local static.
-    pub fn is_place_thread_local(&self, place_ref: PlaceRef<'cx, 'tcx>) -> bool {
-        if let PlaceRef {
-            base: PlaceBase::Static(box Static {
-                kind: StaticKind::Static,
-                def_id,
-                ..
-            }),
-            projection: [],
-        } = place_ref {
-            let attrs = self.infcx.tcx.get_attrs(*def_id);
-            let is_thread_local = attrs.iter().any(|attr| attr.check_name(sym::thread_local));
-
-            debug!(
-                "is_place_thread_local: attrs={:?} is_thread_local={:?}",
-                attrs, is_thread_local
-            );
-            is_thread_local
-        } else {
-            debug!("is_place_thread_local: no");
-            false
         }
     }
 

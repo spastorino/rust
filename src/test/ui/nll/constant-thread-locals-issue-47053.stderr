@@ -1,4 +1,4 @@
-error[E0594]: cannot assign to immutable static item `FOO`
+error[E0594]: cannot assign to data in a `&` reference
   --> $DIR/constant-thread-locals-issue-47053.rs:9:5
    |
 LL |     FOO = 6;

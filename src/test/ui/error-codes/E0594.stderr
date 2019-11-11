@@ -1,4 +1,4 @@
-error[E0594]: cannot assign to immutable static item `NUM`
+error[E0594]: cannot assign to data in a `&` reference
   --> $DIR/E0594.rs:4:5
    |
 LL |     NUM = 20;

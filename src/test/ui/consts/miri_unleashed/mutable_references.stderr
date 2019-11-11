@@ -28,7 +28,7 @@ warning: skipping const checks
 LL | static OH_YES: &mut i32 = &mut 42;
    |                           ^^^^^^^
 
-error[E0594]: cannot assign to `*OH_YES`, as `OH_YES` is an immutable static item
+error[E0594]: cannot assign to data in a `&` reference
   --> $DIR/mutable_references.rs:37:5
    |
 LL |     *OH_YES = 99;

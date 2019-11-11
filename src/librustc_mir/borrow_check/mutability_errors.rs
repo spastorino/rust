@@ -2,7 +2,7 @@ use rustc::hir;
 use rustc::hir::Node;
 use rustc::mir::{self, BindingForm, ClearCrossCrate, Local, Location, Body};
 use rustc::mir::{
-    Mutability, Place, PlaceRef, PlaceBase, ProjectionElem, Static, StaticKind
+    Mutability, Place, PlaceRef, PlaceBase, ProjectionElem,
 };
 use rustc::ty::{self, Ty, TyCtxt};
 use rustc_index::vec::Idx;
@@ -136,35 +136,9 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
             }
 
             PlaceRef {
-                base:
-                    PlaceBase::Static(box Static {
-                        kind: StaticKind::Promoted(..),
-                        ..
-                    }),
+                base: PlaceBase::Static(_),
                 projection: [],
             } => unreachable!(),
-
-            PlaceRef {
-                base:
-                    PlaceBase::Static(box Static {
-                        kind: StaticKind::Static,
-                        def_id,
-                        ..
-                    }),
-                projection: [],
-            } => {
-                if let Place {
-                    base: PlaceBase::Static(_),
-                    projection: box [],
-                } = access_place {
-                    item_msg = format!("immutable static item `{}`", access_place_desc.unwrap());
-                    reason = String::new();
-                } else {
-                    item_msg = format!("`{}`", access_place_desc.unwrap());
-                    let static_name = &self.infcx.tcx.item_name(*def_id);
-                    reason = format!(", as `{}` is an immutable static item", static_name);
-                }
-            }
 
             PlaceRef {
                 base: _,

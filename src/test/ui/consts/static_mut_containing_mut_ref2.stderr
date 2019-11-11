@@ -5,12 +5,27 @@ LL | pub static mut STDERR_BUFFER: () = unsafe { *(&mut STDERR_BUFFER_SPACE) = 4
    |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^ statics require immutable values
 
 error[E0019]: static contains unimplemented expression type
+  --> $DIR/static_mut_containing_mut_ref2.rs:3:46
+   |
+LL | pub static mut STDERR_BUFFER: () = unsafe { *(&mut STDERR_BUFFER_SPACE) = 42; };
+   |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0658]: dereferencing raw pointers in statics is unstable
+  --> $DIR/static_mut_containing_mut_ref2.rs:3:46
+   |
+LL | pub static mut STDERR_BUFFER: () = unsafe { *(&mut STDERR_BUFFER_SPACE) = 42; };
+   |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: for more information, see https://github.com/rust-lang/rust/issues/51911
+   = help: add `#![feature(const_raw_ptr_deref)]` to the crate attributes to enable
+
+error[E0019]: static contains unimplemented expression type
   --> $DIR/static_mut_containing_mut_ref2.rs:3:45
    |
 LL | pub static mut STDERR_BUFFER: () = unsafe { *(&mut STDERR_BUFFER_SPACE) = 42; };
    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: aborting due to 2 previous errors
+error: aborting due to 4 previous errors
 
-Some errors have detailed explanations: E0017, E0019.
+Some errors have detailed explanations: E0017, E0019, E0658.
 For more information about an error, try `rustc --explain E0017`.

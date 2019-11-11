@@ -504,18 +504,6 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
         err
     }
 
-    crate fn thread_local_value_does_not_live_long_enough(
-        &self,
-        span: Span,
-    ) -> DiagnosticBuilder<'cx> {
-        struct_span_err!(
-            self,
-            span,
-            E0712,
-            "thread-local variable borrowed past end of function",
-        )
-    }
-
     crate fn temporary_value_borrowed_for_too_long(
         &self,
         span: Span,

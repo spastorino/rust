@@ -1,9 +1,21 @@
-error[E0080]: could not evaluate static initializer
+error[E0658]: dereferencing raw pointers in statics is unstable
   --> $DIR/issue-14227.rs:6:21
    |
 LL | static CRASH: u32 = symbol;
-   |                     ^^^^^^ tried to read from foreign (extern) static
+   |                     ^^^^^^
+   |
+   = note: for more information, see https://github.com/rust-lang/rust/issues/51911
+   = help: add `#![feature(const_raw_ptr_deref)]` to the crate attributes to enable
 
-error: aborting due to previous error
+error[E0133]: dereference of raw pointer is unsafe and requires unsafe function or block
+  --> $DIR/issue-14227.rs:6:21
+   |
+LL | static CRASH: u32 = symbol;
+   |                     ^^^^^^ dereference of raw pointer
+   |
+   = note: raw pointers may be NULL, dangling or unaligned; they can violate aliasing rules and cause data races: all of these are undefined behavior
 
-For more information about this error, try `rustc --explain E0080`.
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0133, E0658.
+For more information about an error, try `rustc --explain E0133`.

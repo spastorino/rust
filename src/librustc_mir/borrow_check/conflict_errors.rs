@@ -757,9 +757,6 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             explanation
         );
         let err = match (place_desc, explanation) {
-            (Some(_), _) if self.is_place_thread_local(root_place) => {
-                self.report_thread_local_value_does_not_live_long_enough(drop_span, borrow_span)
-            }
             // If the outlives constraint comes from inside the closure,
             // for example:
             //
@@ -1011,29 +1008,6 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         explanation.add_explanation_to_diagnostic(self.infcx.tcx, self.body, &mut err, "", None);
 
         err.buffer(&mut self.errors_buffer);
-    }
-
-    fn report_thread_local_value_does_not_live_long_enough(
-        &mut self,
-        drop_span: Span,
-        borrow_span: Span,
-    ) -> DiagnosticBuilder<'cx> {
-        debug!(
-            "report_thread_local_value_does_not_live_long_enough(\
-             {:?}, {:?}\
-             )",
-            drop_span, borrow_span
-        );
-
-        let mut err = self.thread_local_value_does_not_live_long_enough(borrow_span);
-
-        err.span_label(
-            borrow_span,
-            "thread-local variables cannot be borrowed beyond the end of the function",
-        );
-        err.span_label(drop_span, "end of enclosing function is here");
-
-        err
     }
 
     fn report_temporary_value_does_not_live_long_enough(

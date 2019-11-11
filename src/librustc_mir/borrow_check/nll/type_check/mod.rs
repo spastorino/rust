@@ -434,7 +434,7 @@ impl<'a, 'b, 'tcx> TypeVerifier<'a, 'b, 'tcx> {
         let mut place_ty = match &place.base {
             PlaceBase::Local(index) =>
                 PlaceTy::from_ty(self.body.local_decls[*index].ty),
-            PlaceBase::Static(box Static { kind, ty, def_id }) => {
+            PlaceBase::Static(box Static { promoted, substs: _, ty, def_id: _ }) => {
                 let san_ty = self.sanitize_type(place, ty);
                 let check_err =
                     |verifier: &mut TypeVerifier<'a, 'b, 'tcx>,
@@ -457,22 +457,12 @@ impl<'a, 'b, 'tcx> TypeVerifier<'a, 'b, 'tcx> {
                         );
                         };
                     };
-                match kind {
-                    StaticKind::Promoted(promoted, _) => {
-                        if !self.errors_reported {
-                            let promoted_body = &self.promoted[*promoted];
-                            self.sanitize_promoted(promoted_body, location);
+                if !self.errors_reported {
+                    let promoted_body = &self.promoted[*promoted];
+                    self.sanitize_promoted(promoted_body, location);
 
-                            let promoted_ty = promoted_body.return_ty();
-                            check_err(self, place, promoted_ty, san_ty);
-                        }
-                    }
-                    StaticKind::Static => {
-                        let ty = self.tcx().type_of(*def_id);
-                        let ty = self.cx.normalize(ty, location);
-
-                        check_err(self, place, ty, san_ty);
-                    }
+                    let promoted_ty = promoted_body.return_ty();
+                    check_err(self, place, promoted_ty, san_ty);
                 }
                 PlaceTy::from_ty(san_ty)
             }
@@ -482,10 +472,7 @@ impl<'a, 'b, 'tcx> TypeVerifier<'a, 'b, 'tcx> {
             if let PlaceContext::NonMutatingUse(NonMutatingUseContext::Copy) = context {
                 let is_promoted = match place {
                     Place {
-                        base: PlaceBase::Static(box Static {
-                            kind: StaticKind::Promoted(..),
-                            ..
-                        }),
+                        base: PlaceBase::Static(_),
                         projection: box [],
                     } => true,
                     _ => false,

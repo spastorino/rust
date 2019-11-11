@@ -1,3 +1,12 @@
+error[E0658]: dereferencing raw pointers in statics is unstable
+  --> $DIR/issue-16538.rs:13:34
+   |
+LL | static foo: *const Y::X = Y::foo(Y::x as *const Y::X);
+   |                                  ^^^^
+   |
+   = note: for more information, see https://github.com/rust-lang/rust/issues/51911
+   = help: add `#![feature(const_raw_ptr_deref)]` to the crate attributes to enable
+
 error[E0015]: calls in statics are limited to constant functions, tuple structs and tuple variants
   --> $DIR/issue-16538.rs:13:27
    |
@@ -13,7 +22,15 @@ LL | static foo: *const Y::X = Y::foo(Y::x as *const Y::X);
    = help: the trait `std::marker::Sync` is not implemented for `*const usize`
    = note: shared static variables must have a type that implements `Sync`
 
-error: aborting due to 2 previous errors
+error[E0133]: dereference of raw pointer is unsafe and requires unsafe function or block
+  --> $DIR/issue-16538.rs:13:34
+   |
+LL | static foo: *const Y::X = Y::foo(Y::x as *const Y::X);
+   |                                  ^^^^ dereference of raw pointer
+   |
+   = note: raw pointers may be NULL, dangling or unaligned; they can violate aliasing rules and cause data races: all of these are undefined behavior
 
-Some errors have detailed explanations: E0015, E0277.
+error: aborting due to 4 previous errors
+
+Some errors have detailed explanations: E0015, E0133, E0277, E0658.
 For more information about an error, try `rustc --explain E0015`.

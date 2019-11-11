@@ -10,7 +10,7 @@ use rustc::lint::builtin::{MUTABLE_BORROW_RESERVATION_CONFLICT};
 use rustc::mir::{AggregateKind, BasicBlock, BorrowCheckResult, BorrowKind};
 use rustc::mir::{
     ClearCrossCrate, Local, Location, Body, Mutability, Operand, Place, PlaceBase, PlaceElem,
-    PlaceRef, Static, StaticKind
+    PlaceRef
 };
 use rustc::mir::{Field, ProjectionElem, Promoted, Rvalue, Statement, StatementKind};
 use rustc::mir::{Terminator, TerminatorKind};
@@ -1414,19 +1414,8 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
 
         assert!(root_place.projection.is_empty());
         let (might_be_alive, will_be_dropped) = match root_place.base {
-            PlaceBase::Static(box Static {
-                kind: StaticKind::Promoted(..),
-                ..
-            }) => {
+            PlaceBase::Static(_) => {
                 (true, false)
-            }
-            PlaceBase::Static(box Static {
-                kind: StaticKind::Static,
-                ..
-            }) => {
-                // Thread-locals might be dropped after the function exits, but
-                // "true" statics will never be.
-                (true, self.is_place_thread_local(root_place))
             }
             PlaceBase::Local(_) => {
                 // Locals are always dropped at function exit, and if they
@@ -2080,10 +2069,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             // The rules for promotion are made by `qualify_consts`, there wouldn't even be a
             // `Place::Promoted` if the promotion weren't 100% legal. So we just forward this
             PlaceRef {
-                base: PlaceBase::Static(box Static {
-                    kind: StaticKind::Promoted(..),
-                    ..
-                }),
+                base: PlaceBase::Static(_),
                 projection: [],
             } =>
                 Ok(RootPlace {
@@ -2091,24 +2077,6 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                     place_projection: place.projection,
                     is_local_mutation_allowed,
                 }),
-            PlaceRef {
-                base: PlaceBase::Static(box Static {
-                    kind: StaticKind::Static,
-                    def_id,
-                    ..
-                }),
-                projection: [],
-            } => {
-                if !self.infcx.tcx.is_mutable_static(*def_id) {
-                    Err(place)
-                } else {
-                    Ok(RootPlace {
-                        place_base: place.base,
-                        place_projection: place.projection,
-                        is_local_mutation_allowed,
-                    })
-                }
-            }
             PlaceRef {
                 base: _,
                 projection: [proj_base @ .., elem],

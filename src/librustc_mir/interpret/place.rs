@@ -585,53 +585,18 @@ where
         &self,
         place_static: &mir::Static<'tcx>
     ) -> InterpResult<'tcx, MPlaceTy<'tcx, M::PointerTag>> {
-        use rustc::mir::StaticKind;
+        let substs = self.subst_from_frame_and_normalize_erasing_regions(place_static.substs);
+        let instance = ty::Instance::new(place_static.def_id, substs);
 
-        Ok(match place_static.kind {
-            StaticKind::Promoted(promoted, promoted_substs) => {
-                let substs = self.subst_from_frame_and_normalize_erasing_regions(promoted_substs);
-                let instance = ty::Instance::new(place_static.def_id, substs);
+        // Even after getting `substs` from the frame, this instance may still be
+        // polymorphic because `ConstProp` will try to promote polymorphic MIR.
+        if instance.needs_subst() {
+            throw_inval!(TooGeneric);
+        }
 
-                // Even after getting `substs` from the frame, this instance may still be
-                // polymorphic because `ConstProp` will try to promote polymorphic MIR.
-                if instance.needs_subst() {
-                    throw_inval!(TooGeneric);
-                }
-
-                self.const_eval_raw(GlobalId {
-                    instance,
-                    promoted: Some(promoted),
-                })?
-            }
-
-            StaticKind::Static => {
-                let ty = place_static.ty;
-                assert!(!ty.needs_subst());
-                let layout = self.layout_of(ty)?;
-                let instance = ty::Instance::mono(*self.tcx, place_static.def_id);
-                let cid = GlobalId {
-                    instance,
-                    promoted: None
-                };
-                // Just create a lazy reference, so we can support recursive statics.
-                // tcx takes care of assigning every static one and only one unique AllocId.
-                // When the data here is ever actually used, memory will notice,
-                // and it knows how to deal with alloc_id that are present in the
-                // global table but not in its local memory: It calls back into tcx through
-                // a query, triggering the CTFE machinery to actually turn this lazy reference
-                // into a bunch of bytes.  IOW, statics are evaluated with CTFE even when
-                // this InterpCx uses another Machine (e.g., in miri).  This is what we
-                // want!  This way, computing statics works consistently between codegen
-                // and miri: They use the same query to eventually obtain a `ty::Const`
-                // and use that for further computation.
-                //
-                // Notice that statics have *two* AllocIds: the lazy one, and the resolved
-                // one.  Here we make sure that the interpreted program never sees the
-                // resolved ID.  Also see the doc comment of `Memory::get_static_alloc`.
-                let alloc_id = self.tcx.alloc_map.lock().create_static_alloc(cid.instance.def_id());
-                let ptr = self.tag_static_base_pointer(Pointer::from(alloc_id));
-                MPlaceTy::from_aligned_ptr(ptr, layout)
-            }
+        self.const_eval_raw(GlobalId {
+            instance,
+            promoted: Some(place_static.promoted),
         })
     }
 

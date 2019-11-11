@@ -1,8 +1,8 @@
-error[E0507]: cannot move out of static item `settings_dir`
+error[E0507]: cannot move out of a shared reference
   --> $DIR/issue-64453.rs:15:37
    |
 LL |     let settings_data = from_string(settings_dir);
-   |                                     ^^^^^^^^^^^^ move occurs because `settings_dir` has type `std::string::String`, which does not implement the `Copy` trait
+   |                                     ^^^^^^^^^^^^ move occurs because value has type `std::string::String`, which does not implement the `Copy` trait
 
 error[E0019]: static contains unimplemented expression type
   --> $DIR/issue-64453.rs:4:31
