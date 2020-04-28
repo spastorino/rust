@@ -28,6 +28,7 @@ use rustc_interface::{interface, Queries};
 use rustc_lint::LintStore;
 use rustc_metadata::locator;
 use rustc_middle::middle::cstore::MetadataLoader;
+use rustc_middle::ty;
 use rustc_middle::ty::TyCtxt;
 use rustc_save_analysis as save;
 use rustc_save_analysis::DumpHandler;
@@ -1174,9 +1175,42 @@ pub fn report_ice(info: &panic::PanicInfo<'_>, bug_report_url: &str) {
     // a .span_bug or .bug call has already printed what
     // it wants to print.
     if !info.payload().is::<rustc_errors::ExplicitBug>() {
-        let d = rustc_errors::Diagnostic::new(rustc_errors::Level::Bug, "unexpected panic");
+        let d =
+            rustc_errors::Diagnostic::new(rustc_errors::Level::Bug, "unexpected panic, AKA TAMO!!");
         handler.emit_diagnostic(&d);
     }
+
+    // Be careful reyling on global state here: this code is called from
+    // a panic hook, which means that the global `Handler` may be in a weird
+    // state if it was responsible for triggering the panic.
+    ty::tls::with_context_opt(|icx| {
+        let d = rustc_errors::Diagnostic::new(rustc_errors::Level::Bug, "AKATAMO2");
+        handler.emit_diagnostic(&d);
+        if let Some(icx) = icx {
+            let d = rustc_errors::Diagnostic::new(rustc_errors::Level::Bug, "AKATAMO3");
+            handler.emit_diagnostic(&d);
+            let query_map = icx.tcx.queries.try_collect_active_jobs();
+
+            if let Some(query) = icx.query {
+                if let Some(query_info) = query_map.as_ref().and_then(|map| map.get(&query)) {
+                    let d = rustc_errors::Diagnostic::new(rustc_errors::Level::Bug, "AKATAMO4");
+                    handler.emit_diagnostic(&d);
+                    let mut diag = rustc_errors::Diagnostic::new(
+                        rustc_errors::Level::FailureNote,
+                        &format!(
+                            "#{} [{}] {}",
+                            0,
+                            query_info.info.query.name(),
+                            query_info.info.query.describe(icx.tcx)
+                        ),
+                    );
+                    diag.span =
+                        icx.tcx.sess.source_map().guess_head_span(query_info.info.span).into();
+                    handler.force_print_diagnostic(diag);
+                }
+            }
+        }
+    });
 
     let mut xs: Vec<Cow<'static, str>> = vec![
         "the compiler unexpectedly panicked. this is a bug.".into(),

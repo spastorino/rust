@@ -517,7 +517,7 @@ macro_rules! define_queries_struct {
                 }
             }
 
-            pub(crate) fn try_collect_active_jobs(
+            pub fn try_collect_active_jobs(
                 &self
             ) -> Option<FxHashMap<QueryJobId<crate::dep_graph::DepKind>, QueryJobInfo<TyCtxt<'tcx>>>> {
                 let mut jobs = FxHashMap::default();
