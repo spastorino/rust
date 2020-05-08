@@ -585,6 +585,9 @@ declare_features! (
     /// Allows `if let` guard in match arms.
     (active, if_let_guard, "1.47.0", Some(51114), None),
 
+    /// Allows unsized fn parameters.
+    (active, unsized_fn_params, "1.48.0", Some(48055), None),
+
     // -------------------------------------------------------------------------
     // feature-group-end: actual feature gates
     // -------------------------------------------------------------------------
