@@ -132,7 +132,7 @@ LL | fn g1<X: ?Sized>(x: X) {}
    |       |
    |       this type parameter needs to be `Sized`
    |
-   = help: unsized locals are gated as an unstable feature
+   = help: unsized fn params are gated as an unstable feature
 help: function arguments must have a statically known size, borrowed types always have a known size
    |
 LL | fn g1<X: ?Sized>(&x: X) {}
@@ -146,7 +146,7 @@ LL | fn g2<X: ?Sized + T>(x: X) {}
    |       |
    |       this type parameter needs to be `Sized`
    |
-   = help: unsized locals are gated as an unstable feature
+   = help: unsized fn params are gated as an unstable feature
 help: function arguments must have a statically known size, borrowed types always have a known size
    |
 LL | fn g2<X: ?Sized + T>(&x: X) {}
