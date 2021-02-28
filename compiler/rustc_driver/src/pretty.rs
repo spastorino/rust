@@ -7,14 +7,16 @@ use rustc_hir as hir;
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_hir_pretty as pprust_hir;
 use rustc_middle::hir::map as hir_map;
+use rustc_middle::middle;
 use rustc_middle::ty::{self, TyCtxt};
 use rustc_mir::util::{write_mir_graphviz, write_mir_pretty};
-use rustc_session::config::{Input, PpHirMode, PpMode, PpSourceMode};
+use rustc_session::config::{CrateType, Input, PpHirMode, PpMode, PpSourceMode};
 use rustc_session::Session;
 use rustc_span::symbol::Ident;
 use rustc_span::FileName;
 
 use std::cell::Cell;
+use std::io::{self, Write};
 use std::path::Path;
 
 pub use self::PpMode::*;
@@ -481,6 +483,7 @@ fn print_with_analysis(
     match ppm {
         Mir => write_mir_pretty(tcx, None, &mut out).unwrap(),
         MirCFG => write_mir_graphviz(tcx, None, &mut out).unwrap(),
+        Metadata => write_metadata_pretty(tcx, &mut out),
         _ => unreachable!(),
     }
 
@@ -489,3 +492,36 @@ fn print_with_analysis(
 
     Ok(())
 }
+
+fn write_metadata_pretty(tcx: TyCtxt<'_>, w: &mut dyn Write) -> io::Result<()> {
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    enum MetadataKind {
+        None,
+        Uncompressed,
+        Compressed,
+    }
+
+    let metadata_kind = tcx
+        .sess
+        .crate_types()
+        .iter()
+        .map(|ty| match *ty {
+            CrateType::Executable | CrateType::Staticlib | CrateType::Cdylib => MetadataKind::None,
+            CrateType::Rlib => MetadataKind::Uncompressed,
+            CrateType::Dylib | CrateType::ProcMacro => MetadataKind::Compressed,
+        })
+        .max()
+        .unwrap_or(MetadataKind::None);
+
+    let metadata = match metadata_kind {
+        MetadataKind::None => middle::cstore::EncodedMetadata::new(),
+        MetadataKind::Uncompressed | MetadataKind::Compressed => tcx.encode_metadata(),
+    };
+
+    writeln!(w, "// WARNING: This output format is intended for human consumers only")?;
+    writeln!(w, "// and is subject to change without notice. Knock yourself out.")?;
+    writeln!(w, "{:?}", metadata);
+
+    Ok(())
+}
+

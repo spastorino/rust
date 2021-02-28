@@ -2256,6 +2256,8 @@ pub enum PpMode {
     Mir,
     /// `-Zunpretty=mir-cfg`
     MirCFG,
+    /// ...
+    Metadata,
 }
 
 impl PpMode {
