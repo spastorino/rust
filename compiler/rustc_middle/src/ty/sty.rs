@@ -882,6 +882,8 @@ impl<'tcx> PolyTraitRef<'tcx> {
         self.map_bound(|trait_ref| ty::TraitPredicate {
             trait_ref,
             constness: ty::BoundConstness::NotConst,
+            // TODO: check if this is ok
+            polarity: ty::ImplPolarity::Positive,
         })
     }
 }
