@@ -257,21 +257,6 @@ impl<'a> AstValidator<'a> {
         }
     }
 
-    fn check_trait_fn_not_async(&self, fn_span: Span, asyncness: Async) {
-        if let Async::Yes { span, .. } = asyncness {
-            struct_span_err!(
-                self.session,
-                fn_span,
-                E0706,
-                "functions in traits cannot be declared `async`"
-            )
-            .span_label(span, "`async` because of this")
-            .note("`async` trait functions are not currently supported")
-            .note("consider using the `async-trait` crate: https://crates.io/crates/async-trait")
-            .emit();
-        }
-    }
-
     fn check_trait_fn_not_const(&self, constness: Const) {
         if let Const::Yes(span) = constness {
             struct_span_err!(
@@ -1602,7 +1587,6 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
             self.invalid_visibility(&item.vis, None);
             if let AssocItemKind::Fn(box FnKind(_, sig, _, _)) = &item.kind {
                 self.check_trait_fn_not_const(sig.header.constness);
-                self.check_trait_fn_not_async(item.span, sig.header.asyncness);
             }
         }
 
