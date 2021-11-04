@@ -790,7 +790,7 @@ pub fn visit_interpolated<T: MutVisitor>(nt: &mut token::Nonterminal, vis: &mut 
 
 pub fn noop_visit_asyncness<T: MutVisitor>(asyncness: &mut Async, vis: &mut T) {
     match asyncness {
-        Async::Yes { span: _, closure_id, return_impl_trait_id } => {
+        Async::Impl { span: _, closure_id, return_impl_trait_id } => {
             vis.visit_id(closure_id);
             vis.visit_id(return_impl_trait_id);
         }

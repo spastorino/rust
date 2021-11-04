@@ -459,7 +459,7 @@ impl<'a> Parser<'a> {
         if let ast::Const::Yes(span) = constness {
             self.error_fn_ptr_bad_qualifier(whole_span, span, "const");
         }
-        if let ast::Async::Yes { span, .. } = asyncness {
+        if let ast::Async::Impl { span, .. } = asyncness {
             self.error_fn_ptr_bad_qualifier(whole_span, span, "async");
         }
         Ok(TyKind::BareFn(P(BareFnTy { ext, unsafety, generic_params: params, decl })))

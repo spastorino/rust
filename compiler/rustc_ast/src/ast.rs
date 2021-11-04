@@ -2225,19 +2225,21 @@ pub enum Unsafe {
 
 #[derive(Copy, Clone, Encodable, Decodable, Debug)]
 pub enum Async {
-    Yes { span: Span, closure_id: NodeId, return_impl_trait_id: NodeId },
+    // async move {} -> Uses this variant
+    // async fn foo() {} -> fn foo() -> impl Future<Output=()> { async move {} }
+    Impl { span: Span, closure_id: NodeId, return_impl_trait_id: NodeId },
     No,
 }
 
 impl Async {
     pub fn is_async(self) -> bool {
-        matches!(self, Async::Yes { .. })
+        matches!(self, Async::Impl { .. })
     }
 
     /// In this case this is an `async` return, the `NodeId` for the generated `impl Trait` item.
     pub fn opt_return_id(self) -> Option<NodeId> {
         match self {
-            Async::Yes { return_impl_trait_id, .. } => Some(return_impl_trait_id),
+            Async::Impl { return_impl_trait_id, .. } => Some(return_impl_trait_id),
             Async::No => None,
         }
     }

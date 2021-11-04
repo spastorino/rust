@@ -1815,7 +1815,7 @@ impl<'a> Parser<'a> {
         let constness = self.parse_constness();
 
         let async_start_sp = self.token.span;
-        let asyncness = self.parse_asyncness();
+        let async_span = self.parse_async();
 
         let unsafe_start_sp = self.token.span;
         let unsafety = self.parse_unsafety();
@@ -1823,7 +1823,7 @@ impl<'a> Parser<'a> {
         let ext_start_sp = self.token.span;
         let ext = self.parse_extern();
 
-        if let Async::Yes { span, .. } = asyncness {
+        if let Some(span) = async_span {
             self.ban_async_in_2015(span);
         }
 
@@ -1887,6 +1887,12 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+
+        let asyncness = if let Some(span) = async_span {
+            Async::Impl { span, closure_id: DUMMY_NODE_ID, return_impl_trait_id: DUMMY_NODE_ID }
+        } else {
+            Async::No
+        };
 
         Ok(FnHeader { constness, unsafety, asyncness, ext })
     }

@@ -436,7 +436,7 @@ fn has_test_signature(cx: &ExtCtxt<'_>, i: &ast::Item) -> bool {
                 .emit();
             return false;
         }
-        if let ast::Async::Yes { span, .. } = sig.header.asyncness {
+        if let ast::Async::Impl { span, .. } = sig.header.asyncness {
             sd.struct_span_err(i.span, "async functions cannot be used for tests")
                 .span_label(span, "`async` because of this")
                 .emit();

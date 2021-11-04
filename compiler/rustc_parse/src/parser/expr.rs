@@ -1867,11 +1867,8 @@ impl<'a> Parser<'a> {
         let movability =
             if self.eat_keyword(kw::Static) { Movability::Static } else { Movability::Movable };
 
-        let asyncness = if self.token.uninterpolated_span().rust_2018() {
-            self.parse_asyncness()
-        } else {
-            Async::No
-        };
+        let async_span =
+            if self.token.uninterpolated_span().rust_2018() { self.parse_async() } else { None };
 
         let capture_clause = self.parse_capture_clause()?;
         let decl = self.parse_fn_block_decl()?;
@@ -1888,7 +1885,7 @@ impl<'a> Parser<'a> {
             }
         };
 
-        if let Async::Yes { span, .. } = asyncness {
+        if let Some(span) = async_span {
             // Feature-gate `async ||` closures.
             self.sess.gated_spans.gate(sym::async_closure, span);
         }
@@ -1902,6 +1899,12 @@ impl<'a> Parser<'a> {
         }
 
         let body_span = body.span;
+
+        let asyncness = if let Some(span) = async_span {
+            Async::Impl { span, closure_id: DUMMY_NODE_ID, return_impl_trait_id: DUMMY_NODE_ID }
+        } else {
+            Async::No
+        };
 
         let closure = self.mk_expr(
             lo.to(body.span),

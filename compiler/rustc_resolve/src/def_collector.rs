@@ -138,7 +138,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
 
     fn visit_fn(&mut self, fn_kind: FnKind<'a>, span: Span, _: NodeId) {
         if let FnKind::Fn(_, _, sig, _, body) = fn_kind {
-            if let Async::Yes { closure_id, return_impl_trait_id, .. } = sig.header.asyncness {
+            if let Async::Impl { closure_id, return_impl_trait_id, .. } = sig.header.asyncness {
                 let return_impl_trait_id =
                     self.create_def(return_impl_trait_id, DefPathData::ImplTrait, span);
 
@@ -267,7 +267,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                 // we must create two defs.
                 let closure_def = self.create_def(expr.id, DefPathData::ClosureExpr, expr.span);
                 match asyncness {
-                    Async::Yes { closure_id, .. } => {
+                    Async::Impl { closure_id, .. } => {
                         self.create_def(closure_id, DefPathData::ClosureExpr, expr.span)
                     }
                     Async::No => closure_def,

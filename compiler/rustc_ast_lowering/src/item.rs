@@ -1052,7 +1052,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         body: Option<&Block>,
     ) -> hir::BodyId {
         let closure_id = match asyncness {
-            Async::Yes { closure_id, .. } => closure_id,
+            Async::Impl { closure_id, .. } => closure_id,
             Async::No => return self.lower_fn_body_block(span, decl, body),
         };
 
@@ -1302,7 +1302,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
     fn lower_asyncness(&mut self, a: Async) -> hir::IsAsync {
         match a {
-            Async::Yes { .. } => hir::IsAsync::Async,
+            Async::Impl { .. } => hir::IsAsync::Async,
             Async::No => hir::IsAsync::NotAsync,
         }
     }

@@ -139,7 +139,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     ref body,
                     fn_decl_span,
                 ) => {
-                    if let Async::Yes { closure_id, .. } = asyncness {
+                    if let Async::Impl { closure_id, .. } = asyncness {
                         self.lower_expr_async_closure(
                             capture_clause,
                             closure_id,

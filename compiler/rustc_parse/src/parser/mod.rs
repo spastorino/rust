@@ -25,7 +25,7 @@ use rustc_ast::tokenstream::{TokenStream, TokenTree};
 use rustc_ast::AttrId;
 use rustc_ast::DUMMY_NODE_ID;
 use rustc_ast::{self as ast, AnonConst, AstLike, AttrStyle, AttrVec, Const, CrateSugar, Extern};
-use rustc_ast::{Async, Expr, ExprKind, MacArgs, MacDelimiter, Mutability, StrLit, Unsafe};
+use rustc_ast::{Expr, ExprKind, MacArgs, MacDelimiter, Mutability, StrLit, Unsafe};
 use rustc_ast::{Visibility, VisibilityKind};
 use rustc_ast_pretty::pprust;
 use rustc_data_structures::fx::FxHashMap;
@@ -1064,13 +1064,8 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses asyncness: `async` or nothing.
-    fn parse_asyncness(&mut self) -> Async {
-        if self.eat_keyword(kw::Async) {
-            let span = self.prev_token.uninterpolated_span();
-            Async::Yes { span, closure_id: DUMMY_NODE_ID, return_impl_trait_id: DUMMY_NODE_ID }
-        } else {
-            Async::No
-        }
+    fn parse_async(&mut self) -> Option<Span> {
+        if self.eat_keyword(kw::Async) { Some(self.prev_token.uninterpolated_span()) } else { None }
     }
 
     /// Parses unsafety: `unsafe` or nothing.
