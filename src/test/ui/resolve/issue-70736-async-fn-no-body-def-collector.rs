@@ -9,12 +9,11 @@ impl A {
 
 trait B {
     async fn associated();
-    //~^ ERROR cannot be declared `async`
 }
 impl B for A {
+    //~^ ERROR not all trait items implemented, missing: `__Assoc` [E0046]
     async fn associated(); //~ ERROR without body
-    //~^ ERROR cannot be declared `async`
-    //~| ERROR incompatible type for trait
+    //~^ ERROR incompatible type for trait
 }
 
 fn main() {}

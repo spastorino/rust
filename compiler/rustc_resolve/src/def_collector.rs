@@ -7,7 +7,7 @@ use rustc_expand::expand::AstFragment;
 use rustc_hir::def_id::LocalDefId;
 use rustc_hir::definitions::*;
 use rustc_span::hygiene::LocalExpnId;
-use rustc_span::symbol::{kw, sym};
+use rustc_span::symbol::{kw, sym, Ident};
 use rustc_span::Span;
 use tracing::debug;
 
@@ -137,10 +137,15 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
     }
 
     fn visit_fn(&mut self, fn_kind: FnKind<'a>, span: Span, _: NodeId) {
-        if let FnKind::Fn(_, _, sig, _, body) = fn_kind {
-            if let Async::Impl { closure_id, return_impl_trait_id, .. } = sig.header.asyncness {
-                let return_impl_trait_id =
-                    self.create_def(return_impl_trait_id, DefPathData::ImplTrait, span);
+        if let FnKind::Fn(ctxt, _, sig, _, body) = fn_kind {
+            if let Some(return_id) = sig.header.asyncness.opt_return_id() {
+                let return_id = if visit::FnCtxt::Assoc(visit::AssocCtxt::Trait) == ctxt
+                    && matches!(sig.header.asyncness, Async::FnDecl { .. })
+                {
+                    self.resolver.local_def_id(return_id)
+                } else {
+                    self.create_def(return_id, DefPathData::ImplTrait, span)
+                };
 
                 // For async functions, we need to create their inner defs inside of a
                 // closure to match their desugared representation. Besides that,
@@ -149,11 +154,12 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                 for param in &sig.decl.inputs {
                     self.visit_param(param);
                 }
-                self.with_parent(return_impl_trait_id, |this| {
-                    this.visit_fn_ret_ty(&sig.decl.output)
-                });
-                let closure_def = self.create_def(closure_id, DefPathData::ClosureExpr, span);
-                self.with_parent(closure_def, |this| walk_list!(this, visit_block, body));
+                self.with_parent(return_id, |this| this.visit_fn_ret_ty(&sig.decl.output));
+
+                if let Async::Impl { closure_id, .. } = sig.header.asyncness {
+                    let closure_def = self.create_def(closure_id, DefPathData::ClosureExpr, span);
+                    self.with_parent(closure_def, |this| walk_list!(this, visit_block, body));
+                }
                 return;
             }
         }
@@ -237,6 +243,19 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
     }
 
     fn visit_assoc_item(&mut self, i: &'a AssocItem, ctxt: visit::AssocCtxt) {
+        match (ctxt, &i.kind) {
+            (visit::AssocCtxt::Trait, AssocItemKind::Fn(box FnKind(_, sig, _, None))) => {
+                if let Async::FnDecl { return_id } = sig.header.asyncness {
+                    self.create_def(
+                        return_id,
+                        DefPathData::TypeNs(Ident::from_str("__Assoc").name),
+                        i.span,
+                    );
+                }
+            }
+            _ => {}
+        }
+
         let def_data = match &i.kind {
             AssocItemKind::Fn(..) | AssocItemKind::Const(..) => DefPathData::ValueNs(i.ident.name),
             AssocItemKind::TyAlias(..) => DefPathData::TypeNs(i.ident.name),
@@ -270,7 +289,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                     Async::Impl { closure_id, .. } => {
                         self.create_def(closure_id, DefPathData::ClosureExpr, expr.span)
                     }
-                    Async::No => closure_def,
+                    Async::FnDecl { .. } | Async::No => closure_def,
                 }
             }
             ExprKind::Async(_, async_id, _) => {

@@ -1384,6 +1384,12 @@ impl<'a, 'b> Visitor<'b> for BuildReducedGraphVisitor<'a, 'b> {
         }
 
         if ctxt == AssocCtxt::Trait {
+            if let AssocItemKind::Fn(box FnKind(_, ref sig, _, None)) = item.kind {
+                if let Some(async_node_id) = sig.header.asyncness.opt_return_id() {
+                    let local_def_id = self.r.local_def_id(async_node_id);
+                    self.r.visibilities.insert(local_def_id, vis);
+                }
+            }
             let (def_kind, ns) = match item.kind {
                 AssocItemKind::Const(..) => (DefKind::AssocConst, ValueNS),
                 AssocItemKind::Fn(box FnKind(_, ref sig, _, _)) => {

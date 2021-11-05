@@ -13,26 +13,25 @@ fn main() {
     //~^ ERROR functions cannot be both `const` and `async`
 
     trait X {
-        async fn ft1(); //~ ERROR functions in traits cannot be declared `async`
+        async fn ft1();
         unsafe fn ft2(); // OK.
         const fn ft3(); //~ ERROR functions in traits cannot be declared const
         extern "C" fn ft4(); // OK.
         const async unsafe extern "C" fn ft5();
-        //~^ ERROR functions in traits cannot be declared `async`
-        //~| ERROR functions in traits cannot be declared const
+        //~^ ERROR functions in traits cannot be declared const
         //~| ERROR functions cannot be both `const` and `async`
     }
 
     struct Y;
     impl X for Y {
-        async fn ft1() {} //~ ERROR functions in traits cannot be declared `async`
+        //~^ ERROR not all trait items implemented, missing: `__Assoc`, `__Assoc` [E0046]
+        async fn ft1() {}
         //~^ ERROR method `ft1` has an incompatible type for trait
         unsafe fn ft2() {} // OK.
         const fn ft3() {} //~ ERROR functions in traits cannot be declared const
         extern "C" fn ft4() {}
         const async unsafe extern "C" fn ft5() {}
-        //~^ ERROR functions in traits cannot be declared `async`
-        //~| ERROR functions in traits cannot be declared const
+        //~^ ERROR functions in traits cannot be declared const
         //~| ERROR method `ft5` has an incompatible type for trait
         //~| ERROR functions cannot be both `const` and `async`
     }

@@ -1491,21 +1491,21 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
         self.check_c_varadic_type(fk);
 
         // Functions cannot both be `const async`
-        if let Some(FnHeader {
-            constness: Const::Yes(cspan),
-            asyncness: Async::Impl { span: aspan, .. },
-            ..
-        }) = fk.header()
-        {
-            self.err_handler()
-                .struct_span_err(
-                    vec![*cspan, *aspan],
-                    "functions cannot be both `const` and `async`",
-                )
-                .span_label(*cspan, "`const` because of this")
-                .span_label(*aspan, "`async` because of this")
-                .span_label(span, "") // Point at the fn header.
-                .emit();
+        if let Some(FnHeader { constness: Const::Yes(cspan), asyncness, .. }) = fk.header() {
+            if asyncness.is_async() {
+                let aspan =
+                    if let Async::Impl { span: aspan, .. } = asyncness { aspan } else { &span };
+
+                self.err_handler()
+                    .struct_span_err(
+                        vec![*cspan, *aspan],
+                        "functions cannot be both `const` and `async`",
+                    )
+                    .span_label(*cspan, "`const` because of this")
+                    .span_label(*aspan, "`async` because of this")
+                    .span_label(span, "") // Point at the fn header.
+                    .emit();
+            }
         }
 
         if let FnKind::Fn(

@@ -462,6 +462,9 @@ impl<'a> Parser<'a> {
         if let ast::Async::Impl { span, .. } = asyncness {
             self.error_fn_ptr_bad_qualifier(whole_span, span, "async");
         }
+        if let ast::Async::FnDecl { .. } = asyncness {
+            self.error_fn_ptr_bad_qualifier(whole_span, lo, "async");
+        }
         Ok(TyKind::BareFn(P(BareFnTy { ext, unsafety, generic_params: params, decl })))
     }
 

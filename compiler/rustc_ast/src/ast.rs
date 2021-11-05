@@ -2228,18 +2228,25 @@ pub enum Async {
     // async move {} -> Uses this variant
     // async fn foo() {} -> fn foo() -> impl Future<Output=()> { async move {} }
     Impl { span: Span, closure_id: NodeId, return_impl_trait_id: NodeId },
+
+    // trait Foo {
+    //   async fn foo();
+    // }
+    FnDecl { return_id: NodeId },
+
     No,
 }
 
 impl Async {
     pub fn is_async(self) -> bool {
-        matches!(self, Async::Impl { .. })
+        matches!(self, Async::Impl { .. } | Async::FnDecl { .. })
     }
 
     /// In this case this is an `async` return, the `NodeId` for the generated `impl Trait` item.
     pub fn opt_return_id(self) -> Option<NodeId> {
         match self {
             Async::Impl { return_impl_trait_id, .. } => Some(return_impl_trait_id),
+            Async::FnDecl { return_id } => Some(return_id),
             Async::No => None,
         }
     }

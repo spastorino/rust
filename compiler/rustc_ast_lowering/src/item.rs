@@ -392,9 +392,29 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 ref items,
             )) => {
                 let bounds = self.lower_param_bounds(bounds, ImplTraitContext::disallowed());
-                let items = self
-                    .arena
-                    .alloc_from_iter(items.iter().map(|item| self.lower_trait_item_ref(item)));
+                let items = self.arena.alloc_from_iter(items.iter().flat_map(|item| {
+                    let lowered_trait_item_ref = iter::once(self.lower_trait_item_ref(item));
+                    let async_associated_item =
+                        if let AssocItemKind::Fn(box FnKind(_, ref sig, ref _generics, None)) =
+                            item.kind
+                        {
+                            sig.header.asyncness.opt_return_id().map(|async_node_id| {
+                                hir::TraitItemRef {
+                                    id: hir::TraitItemId {
+                                        def_id: self.resolver.local_def_id(async_node_id),
+                                    },
+                                    ident: Ident::from_str("__Assoc"),
+                                    span: self.lower_span(item.span),
+                                    defaultness: hir::Defaultness::Default { has_value: false },
+                                    kind: hir::AssocItemKind::Type,
+                                }
+                            })
+                        } else {
+                            None
+                        };
+
+                    lowered_trait_item_ref.chain(async_associated_item)
+                }));
                 hir::ItemKind::Trait(
                     is_auto,
                     self.lower_unsafety(unsafety),
@@ -773,6 +793,12 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 (hir::Generics::empty(), hir::TraitItemKind::Const(ty, body))
             }
             AssocItemKind::Fn(box FnKind(_, ref sig, ref generics, None)) => {
+                if let Some(async_node_id) = sig.header.asyncness.opt_return_id() {
+                    self.with_hir_id_owner(async_node_id, |lctx| {
+                        hir::OwnerNode::TraitItem(lctx.lower_async_assoc_type(i, async_node_id))
+                    });
+                }
+
                 let names = self.lower_fn_params_to_names(&sig.decl);
                 let (generics, sig) =
                     self.lower_method_sig(generics, sig, trait_item_def_id, false, None);
@@ -810,6 +836,22 @@ impl<'hir> LoweringContext<'_, 'hir> {
             ident: self.lower_ident(i.ident),
             generics,
             kind,
+            span: self.lower_span(i.span),
+        };
+        self.arena.alloc(item)
+    }
+
+    fn lower_async_assoc_type(
+        &mut self,
+        i: &AssocItem,
+        async_node_id: NodeId,
+    ) -> &'hir hir::TraitItem<'hir> {
+        let def_id = self.resolver.local_def_id(async_node_id);
+        let item = hir::TraitItem {
+            def_id,
+            ident: Ident::from_str("__Assoc"),
+            generics: hir::Generics::empty(),
+            kind: hir::TraitItemKind::Type(&[], None),
             span: self.lower_span(i.span),
         };
         self.arena.alloc(item)
@@ -1053,7 +1095,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
     ) -> hir::BodyId {
         let closure_id = match asyncness {
             Async::Impl { closure_id, .. } => closure_id,
-            Async::No => return self.lower_fn_body_block(span, decl, body),
+            Async::FnDecl { .. } | Async::No => return self.lower_fn_body_block(span, decl, body),
         };
 
         self.lower_body(|this| {
@@ -1302,7 +1344,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
     fn lower_asyncness(&mut self, a: Async) -> hir::IsAsync {
         match a {
-            Async::Impl { .. } => hir::IsAsync::Async,
+            Async::Impl { .. } | Async::FnDecl { .. } => hir::IsAsync::Async,
             Async::No => hir::IsAsync::NotAsync,
         }
     }

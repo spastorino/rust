@@ -794,6 +794,9 @@ pub fn noop_visit_asyncness<T: MutVisitor>(asyncness: &mut Async, vis: &mut T) {
             vis.visit_id(closure_id);
             vis.visit_id(return_impl_trait_id);
         }
+        Async::FnDecl { return_id } => {
+            vis.visit_id(return_id);
+        }
         Async::No => {}
     }
 }

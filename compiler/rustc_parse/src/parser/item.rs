@@ -1708,7 +1708,7 @@ impl<'a> Parser<'a> {
         req_name: ReqName,
         sig_lo: Span,
     ) -> PResult<'a, (Ident, FnSig, Generics, Option<P<Block>>)> {
-        let header = self.parse_fn_front_matter()?; // `const ... fn`
+        let mut header = self.parse_fn_front_matter()?; // `const ... fn`
         let ident = self.parse_ident()?; // `foo`
         let mut generics = self.parse_generics()?; // `<'a, T, ...>`
         let decl = self.parse_fn_decl(req_name, AllowPlus::Yes, RecoverReturnSign::Yes)?; // `(p: u8, ...)`
@@ -1717,6 +1717,13 @@ impl<'a> Parser<'a> {
         let mut sig_hi = self.prev_token.span;
         let body = self.parse_fn_body(attrs, &ident, &mut sig_hi)?; // `;` or `{ ... }`.
         let fn_sig_span = sig_lo.to(sig_hi);
+
+        if body.is_none() {
+            if let Async::Impl { return_impl_trait_id, .. } = header.asyncness {
+                header.asyncness = Async::FnDecl { return_id: return_impl_trait_id };
+            }
+        }
+
         Ok((ident, FnSig { header, decl, span: fn_sig_span }, generics, body))
     }
 
