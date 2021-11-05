@@ -1225,7 +1225,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         ),
                         unsafety: this.lower_unsafety(f.unsafety),
                         abi: this.lower_extern(f.ext),
-                        decl: this.lower_fn_decl(&f.decl, None, false, None),
+                        decl: this.lower_fn_decl(&f.decl, None, false, Async::No),
                         param_names: this.lower_fn_params_to_names(&f.decl),
                     }))
                 })
@@ -1525,17 +1525,17 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         decl: &FnDecl,
         mut in_band_ty_params: Option<(DefId, &mut Vec<hir::GenericParam<'hir>>)>,
         impl_trait_return_allow: bool,
-        make_ret_async: Option<NodeId>,
+        asyncness: Async,
     ) -> &'hir hir::FnDecl<'hir> {
         debug!(
             "lower_fn_decl(\
             fn_decl: {:?}, \
             in_band_ty_params: {:?}, \
             impl_trait_return_allow: {}, \
-            make_ret_async: {:?})",
-            decl, in_band_ty_params, impl_trait_return_allow, make_ret_async,
+            asyncness: {:?})",
+            decl, in_band_ty_params, impl_trait_return_allow, asyncness,
         );
-        let lt_mode = if make_ret_async.is_some() {
+        let lt_mode = if asyncness.is_async() {
             // In `async fn`, argument-position elided lifetimes
             // must be transformed into fresh generic parameters so that
             // they can be applied to the opaque `impl Trait` return type.
@@ -1568,12 +1568,20 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             }))
         });
 
-        let output = if let Some(ret_id) = make_ret_async {
-            self.lower_async_fn_ret_ty(
-                &decl.output,
-                in_band_ty_params.expect("`make_ret_async` but no `fn_def_id`").0,
-                ret_id,
-            )
+        let output = if let Some(ret_id) = asyncness.opt_return_id() {
+            if let Async::Impl { .. } = asyncness {
+                self.lower_async_fn_ret_ty(
+                    &decl.output,
+                    in_band_ty_params.expect("`asyncness` but no `fn_def_id`").0,
+                    ret_id,
+                )
+            } else {
+                self.lower_async_fn_trait_ret_ty(
+                    &decl.output,
+                    in_band_ty_params.expect("`asyncness` but no `fn_def_id`").0,
+                    ret_id,
+                )
+            }
         } else {
             match decl.output {
                 FnRetTy::Ty(ref ty) => {
@@ -1621,6 +1629,51 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 }
             }),
         })
+    }
+
+    // Transforms `-> T` for `async fn` into `-> OpaqueTy { .. }`
+    // combined with the following definition of `OpaqueTy`:
+    //
+    //     type OpaqueTy<generics_from_parent_fn> = impl Future<Output = T>;
+    //
+    // `inputs`: lowered types of parameters to the function (used to collect lifetimes)
+    // `output`: unlowered output type (`T` in `-> T`)
+    // `fn_def_id`: `DefId` of the parent function (used to create child impl trait definition)
+    // `opaque_ty_node_id`: `NodeId` of the opaque `impl Trait` type that should be created
+    // `elided_lt_replacement`: replacement for elided lifetimes in the return type
+    fn lower_async_fn_trait_ret_ty(
+        &mut self,
+        output: &FnRetTy,
+        _fn_def_id: DefId,
+        return_id: NodeId,
+    ) -> hir::FnRetTy<'hir> {
+        debug!(
+            "lower_async_fn_ret_ty(\
+             output={:?}, \
+             fn_def_id={:?}, \
+             return_id={:?})",
+            output, _fn_def_id, return_id,
+        );
+
+        let span = output.span();
+        let return_def_id = self.resolver.local_def_id(return_id);
+
+        let ty_span = self.mark_span_with_reason(DesugaringKind::Async, span, None);
+        let ret_ty_ref = hir::TyKind::Path(hir::QPath::Resolved(
+            None,
+            self.arena.alloc(hir::Path {
+                span: self.lower_span(span),
+                res: self.lower_res(Res::Def(DefKind::AssocTy, return_def_id.to_def_id())),
+                segments: arena_vec![
+                    self;
+                    hir::PathSegment::from_ident(Ident::from_str("Self")),
+                    hir::PathSegment::from_ident(Ident::from_str("__Assoc"))
+                ],
+            }),
+        ));
+
+        let ret_ty = self.ty(ty_span, ret_ty_ref);
+        hir::FnRetTy::Return(self.arena.alloc(ret_ty))
     }
 
     // Transforms `-> T` for `async fn` into `-> OpaqueTy { .. }`
