@@ -1526,6 +1526,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         mut in_band_ty_params: Option<(DefId, &mut Vec<hir::GenericParam<'hir>>)>,
         impl_trait_return_allow: bool,
         asyncness: Async,
+        trait_id: DefId,
     ) -> &'hir hir::FnDecl<'hir> {
         debug!(
             "lower_fn_decl(\
@@ -1644,7 +1645,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_async_fn_trait_ret_ty(
         &mut self,
         output: &FnRetTy,
-        _fn_def_id: DefId,
+        trait_id: NodeId,
+        fn_def_id: DefId,
         return_id: NodeId,
     ) -> hir::FnRetTy<'hir> {
         debug!(
@@ -1652,24 +1654,38 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
              output={:?}, \
              fn_def_id={:?}, \
              return_id={:?})",
-            output, _fn_def_id, return_id,
+            output, fn_def_id, return_id,
         );
 
         let span = output.span();
         let return_def_id = self.resolver.local_def_id(return_id);
 
         let ty_span = self.mark_span_with_reason(DesugaringKind::Async, span, None);
-        let ret_ty_ref = hir::TyKind::Path(hir::QPath::Resolved(
-            None,
-            self.arena.alloc(hir::Path {
-                span: self.lower_span(span),
-                res: self.lower_res(Res::Def(DefKind::AssocTy, return_def_id.to_def_id())),
-                segments: arena_vec![
-                    self;
-                    hir::PathSegment::from_ident(Ident::from_str("Self")),
-                    hir::PathSegment::from_ident(Ident::from_str("__Assoc"))
-                ],
-            }),
+
+        let node_id = match output {
+            FnRetTy::Ty(ty) => ty.id,
+            _ => DUMMY_NODE_ID,
+        };
+
+        let trait_ty = &hir::Ty {
+            hir_id: self.resolver.local_def_id(node_id),
+            kind: hir::TyKind::Path(hir::QPath::Resolved(
+                None,
+                self.arena.alloc(hir::Path {
+                    span: self.lower_span(span),
+                    res: self.lower_res(Res::SelfTy(Some(trait_id), None)),
+                    segments: arena_vec![
+                        self;
+                        hir::PathSegment::from_ident(Ident::from_str("Self"))
+                    ],
+                }),
+            )),
+            span: self.lower_span(span),
+        };
+
+        let ret_ty_ref = hir::TyKind::Path(hir::QPath::TypeRelative(
+            trait_ty,
+            self.arena.alloc(hir::PathSegment::from_ident(Ident::from_str("__Assoc"))),
         ));
 
         let ret_ty = self.ty(ty_span, ret_ty_ref);
