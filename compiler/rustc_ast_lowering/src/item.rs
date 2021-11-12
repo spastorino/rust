@@ -31,11 +31,26 @@ impl ItemLowerer<'_, '_, '_> {
         impl_ref: &Option<TraitRef>,
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        let old = self.lctx.trait_ctxt;
-        self.lctx.trait_ctxt = match impl_ref {
+        let trait_ctxt = match impl_ref {
             Some(trait_ref) => TraitContext::ImplTrait(trait_ref.ref_id),
             None => TraitContext::None,
         };
+        self.with_ctxt(trait_ctxt, f)
+    }
+
+    fn with_trait_ctxt<T>(&mut self, trait_node_id: NodeId, f: impl FnOnce(&mut Self) -> T) -> T {
+        let trait_ctxt = TraitContext::Trait(trait_node_id);
+        self.with_ctxt(trait_ctxt, f)
+    }
+
+    fn with_no_ctxt<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        let trait_ctxt = TraitContext::None;
+        self.with_ctxt(trait_ctxt, f)
+    }
+
+    fn with_ctxt<T>(&mut self, trait_ctxt: TraitContext, f: impl FnOnce(&mut Self) -> T) -> T {
+        let old = self.lctx.trait_ctxt;
+        self.lctx.trait_ctxt = trait_ctxt;
         let ret = f(self);
         self.lctx.trait_ctxt = old;
         ret
@@ -45,7 +60,10 @@ impl ItemLowerer<'_, '_, '_> {
 impl<'a> Visitor<'a> for ItemLowerer<'a, '_, '_> {
     fn visit_item(&mut self, item: &'a Item) {
         let hir_id = self.lctx.with_hir_id_owner(item.id, |lctx| {
-            let node = lctx.without_in_scope_lifetime_defs(|lctx| lctx.lower_item(item));
+            let node = lctx.without_in_scope_lifetime_defs(|lctx| {
+                let this = &mut ItemLowerer { lctx };
+                this.with_no_ctxt(|this| this.lctx.lower_item(item))
+            });
             hir::OwnerNode::Item(node)
         });
 
@@ -54,6 +72,9 @@ impl<'a> Visitor<'a> for ItemLowerer<'a, '_, '_> {
             match item.kind {
                 ItemKind::Impl(box Impl { ref of_trait, .. }) => {
                     this.with_trait_impl_ctxt(of_trait, |this| visit::walk_item(this, item));
+                }
+                ItemKind::Trait(_) => {
+                    this.with_trait_ctxt(item.id, |this| visit::walk_item(this, item));
                 }
                 _ => visit::walk_item(this, item),
             }
@@ -778,7 +799,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
             AssocItemKind::Fn(box Fn { ref sig, ref generics, body: None, .. }) => {
                 let names = self.lower_fn_params_to_names(&sig.decl);
                 let (generics, sig) =
-                    self.lower_method_sig(generics, sig, trait_item_def_id, false, None);
+                    self.lower_method_sig(generics, sig, trait_item_def_id, true, None);
                 (generics, hir::TraitItemKind::Fn(sig, hir::TraitFn::Required(names)))
             }
             AssocItemKind::Fn(box Fn { ref sig, ref generics, body: Some(ref body), .. }) => {

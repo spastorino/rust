@@ -215,6 +215,7 @@ pub trait ResolverAstLowering {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum TraitContext {
     ImplTrait(ast::NodeId),
+    Trait(ast::NodeId),
     None,
 }
 
@@ -1592,14 +1593,21 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         } else {
             match decl.output {
                 FnRetTy::Ty(ref ty) => {
-                    let context = match in_band_ty_params {
-                        Some((def_id, _)) if impl_trait_return_allow => {
-                            ImplTraitContext::ReturnPositionOpaqueTy {
-                                fn_def_id: def_id,
-                                origin: hir::OpaqueTyOrigin::FnReturn,
-                            }
+                    let context = match (self.trait_ctxt, &ty.kind) {
+                        (TraitContext::Trait(_), TyKind::ImplTrait(_, _))
+                            if impl_trait_return_allow =>
+                        {
+                            ImplTraitContext::disallowed()
                         }
-                        _ => ImplTraitContext::disallowed(),
+                        _ => match in_band_ty_params {
+                            Some((def_id, _)) if impl_trait_return_allow => {
+                                ImplTraitContext::ReturnPositionOpaqueTy {
+                                    fn_def_id: def_id,
+                                    origin: hir::OpaqueTyOrigin::FnReturn,
+                                }
+                            }
+                            _ => ImplTraitContext::disallowed(),
+                        },
                     };
                     hir::FnRetTy::Return(self.lower_ty(ty, context))
                 }
