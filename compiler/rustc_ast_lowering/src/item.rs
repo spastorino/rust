@@ -1,5 +1,5 @@
 use super::{AnonymousLifetimeMode, LoweringContext, ParamMode};
-use super::{ImplTraitContext, ImplTraitPosition};
+use super::{ImplTraitContext, ImplTraitPosition, TraitContext};
 use crate::Arena;
 
 use rustc_ast::ptr::P;
@@ -26,15 +26,18 @@ pub(super) struct ItemLowerer<'a, 'lowering, 'hir> {
 }
 
 impl ItemLowerer<'_, '_, '_> {
-    fn with_trait_impl_ref<T>(
+    fn with_trait_impl_ctxt<T>(
         &mut self,
         impl_ref: &Option<TraitRef>,
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        let old = self.lctx.is_in_trait_impl;
-        self.lctx.is_in_trait_impl = impl_ref.is_some();
+        let old = self.lctx.trait_ctxt;
+        self.lctx.trait_ctxt = match impl_ref {
+            Some(trait_ref) => TraitContext::ImplTrait(trait_ref.ref_id),
+            None => TraitContext::None,
+        };
         let ret = f(self);
-        self.lctx.is_in_trait_impl = old;
+        self.lctx.trait_ctxt = old;
         ret
     }
 }
@@ -50,7 +53,7 @@ impl<'a> Visitor<'a> for ItemLowerer<'a, '_, '_> {
             let this = &mut ItemLowerer { lctx: this };
             match item.kind {
                 ItemKind::Impl(box Impl { ref of_trait, .. }) => {
-                    this.with_trait_impl_ref(of_trait, |this| visit::walk_item(this, item));
+                    this.with_trait_impl_ctxt(of_trait, |this| visit::walk_item(this, item));
                 }
                 _ => visit::walk_item(this, item),
             }
@@ -858,12 +861,11 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 let asyncness = sig.header.asyncness;
                 let body_id =
                     self.lower_maybe_async_body(i.span, &sig.decl, asyncness, body.as_deref());
-                let impl_trait_return_allow = !self.is_in_trait_impl;
                 let (generics, sig) = self.lower_method_sig(
                     generics,
                     sig,
                     impl_item_def_id,
-                    impl_trait_return_allow,
+                    !self.trait_ctxt.is_impl_trait(),
                     asyncness.opt_return_id(),
                 );
 

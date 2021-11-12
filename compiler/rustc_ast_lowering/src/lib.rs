@@ -120,7 +120,7 @@ struct LoweringContext<'a, 'hir: 'a> {
     catch_scope: Option<NodeId>,
     loop_scope: Option<NodeId>,
     is_in_loop_condition: bool,
-    is_in_trait_impl: bool,
+    trait_ctxt: TraitContext,
     is_in_dyn_type: bool,
 
     /// What to do when we encounter an "anonymous lifetime
@@ -208,6 +208,20 @@ pub trait ResolverAstLowering {
         expn_id: ExpnId,
         span: Span,
     ) -> LocalDefId;
+}
+
+/// Context of `Trait` or `impl Trait` in code, Determines which is the `Trait` or `impl Trait`
+/// we're currently lowering.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum TraitContext {
+    ImplTrait(ast::NodeId),
+    None,
+}
+
+impl TraitContext {
+    fn is_impl_trait(&self) -> bool {
+        matches!(self, TraitContext::ImplTrait(_))
+    }
 }
 
 /// Context of `impl Trait` in code, which determines whether it is allowed in an HIR subtree,
@@ -305,7 +319,7 @@ pub fn lower_crate<'a, 'hir>(
         catch_scope: None,
         loop_scope: None,
         is_in_loop_condition: false,
-        is_in_trait_impl: false,
+        trait_ctxt: TraitContext::None,
         is_in_dyn_type: false,
         anonymous_lifetime_mode: AnonymousLifetimeMode::PassThrough,
         current_hir_id_owner: CRATE_DEF_ID,
