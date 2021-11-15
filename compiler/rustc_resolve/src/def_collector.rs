@@ -168,6 +168,25 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
         visit::walk_fn(self, fn_kind, span);
     }
 
+    fn visit_fn_ret_ty(&mut self, ret_ty: &'a FnRetTy) {
+        if let ImplTraitContext::Existential(Some(trait_def)) = self.impl_trait_context {
+            if let FnRetTy::Ty(t) = ret_ty {
+                if t.kind.is_impl_trait() {
+                    // create definition for associated type
+                    self.resolver.create_def(
+                        trait_def,
+                        t.id,
+                        DefPathData::TypeNs(kw::Empty),
+                        self.expansion.to_expn_id(),
+                        t.span,
+                    );
+                }
+            }
+        }
+
+        visit::walk_fn_ret_ty(self, ret_ty);
+    }
+
     fn visit_use_tree(&mut self, use_tree: &'a UseTree, id: NodeId, _nested: bool) {
         self.create_def(id, DefPathData::Misc, use_tree.span);
         match use_tree.kind {

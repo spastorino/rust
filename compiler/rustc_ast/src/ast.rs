@@ -1937,6 +1937,10 @@ pub enum TyKind {
 }
 
 impl TyKind {
+    pub fn is_impl_trait(&self) -> bool {
+        matches!(self, TyKind::ImplTrait(..))
+    }
+
     pub fn is_implicit_self(&self) -> bool {
         matches!(self, TyKind::ImplicitSelf)
     }
