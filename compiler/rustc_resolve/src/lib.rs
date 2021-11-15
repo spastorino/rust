@@ -171,7 +171,7 @@ impl<'a> ParentScope<'a> {
 
 #[derive(Copy, Debug, Clone)]
 enum ImplTraitContext {
-    Existential,
+    Existential(Option<LocalDefId>),
     Universal(LocalDefId),
 }
 
@@ -1288,7 +1288,7 @@ impl<'a> Resolver<'a> {
         node_id_to_def_id.insert(CRATE_NODE_ID, root);
 
         let mut invocation_parents = FxHashMap::default();
-        invocation_parents.insert(LocalExpnId::ROOT, (root, ImplTraitContext::Existential));
+        invocation_parents.insert(LocalExpnId::ROOT, (root, ImplTraitContext::Existential(None)));
 
         let mut extern_prelude: FxHashMap<Ident, ExternPreludeEntry<'_>> = session
             .opts

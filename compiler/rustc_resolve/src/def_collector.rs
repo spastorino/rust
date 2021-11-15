@@ -121,7 +121,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
         let def = self.create_def(i.id, def_data, i.span);
 
         self.with_parent(def, |this| {
-            this.with_impl_trait(ImplTraitContext::Existential, |this| {
+            this.with_impl_trait(ImplTraitContext::Existential(None), |this| {
                 match i.kind {
                     ItemKind::Struct(ref struct_def, _) | ItemKind::Union(ref struct_def, _) => {
                         // If this is a unit or tuple-like struct, register the constructor.
@@ -132,7 +132,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                     _ => {}
                 }
                 visit::walk_item(this, i);
-            })
+            });
         });
     }
 
@@ -294,7 +294,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                         self.expansion.to_expn_id(),
                         ty.span,
                     ),
-                    ImplTraitContext::Existential => {
+                    ImplTraitContext::Existential(_) => {
                         self.create_def(node_id, DefPathData::ImplTrait, ty.span)
                     }
                 };
