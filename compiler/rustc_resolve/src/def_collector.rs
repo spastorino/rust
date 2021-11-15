@@ -91,13 +91,20 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
         // Pick the def data. This need not be unique, but the more
         // information we encapsulate into, the better
         let def_data = match &i.kind {
+            ItemKind::Trait(..) => {
+                let def_data = DefPathData::TypeNs(i.ident.name);
+                let def = self.create_def(i.id, def_data, i.span);
+
+                return self.with_impl_trait(ImplTraitContext::Existential(Some(def)), |this| {
+                    this.with_parent(def, |this| visit::walk_item(this, i))
+                });
+            }
             ItemKind::Impl { .. } => DefPathData::Impl,
             ItemKind::Mod(..) if i.ident.name == kw::Empty => {
                 // Fake crate root item from expand.
                 return visit::walk_item(self, i);
             }
             ItemKind::Mod(..)
-            | ItemKind::Trait(..)
             | ItemKind::TraitAlias(..)
             | ItemKind::Enum(..)
             | ItemKind::Struct(..)
