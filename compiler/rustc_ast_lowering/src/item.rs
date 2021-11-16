@@ -416,9 +416,39 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 ref items,
             }) => {
                 let bounds = self.lower_param_bounds(bounds, ImplTraitContext::disallowed());
-                let items = self
-                    .arena
-                    .alloc_from_iter(items.iter().map(|item| self.lower_trait_item_ref(item)));
+                let items = self.arena.alloc_from_iter(items.iter().flat_map(|item| {
+                    let lowered_trait_item_ref = iter::once(self.lower_trait_item_ref(item));
+                    let impl_trait_associated_item = if let AssocItemKind::Fn(box Fn {
+                        defaultness: _,
+                        ref sig,
+                        generics: _,
+                        body: None,
+                    }) = item.kind
+                    {
+                        match &sig.decl.output {
+                            FnRetTy::Ty(t) => {
+                                if let TyKind::ImplTrait(assoc_item_id, _) = t.kind {
+                                    Some(hir::TraitItemRef {
+                                        id: hir::TraitItemId {
+                                            def_id: self.resolver.local_def_id(assoc_item_id),
+                                        },
+                                        ident: Ident::from_str("__Assoc"),
+                                        span: self.lower_span(item.span),
+                                        defaultness: hir::Defaultness::Default { has_value: false },
+                                        kind: hir::AssocItemKind::Type,
+                                    })
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+
+                    lowered_trait_item_ref.chain(impl_trait_associated_item)
+                }));
                 hir::ItemKind::Trait(
                     is_auto,
                     self.lower_unsafety(unsafety),

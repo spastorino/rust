@@ -171,11 +171,11 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
     fn visit_fn_ret_ty(&mut self, ret_ty: &'a FnRetTy) {
         if let ImplTraitContext::Existential(Some(trait_def)) = self.impl_trait_context {
             if let FnRetTy::Ty(t) = ret_ty {
-                if t.kind.is_impl_trait() {
+                if let TyKind::ImplTrait(assoc_ty_id, _) = t.kind {
                     // create definition for associated type
                     self.resolver.create_def(
                         trait_def,
-                        t.id,
+                        assoc_ty_id,
                         DefPathData::TypeNs(kw::Empty),
                         self.expansion.to_expn_id(),
                         t.span,
@@ -320,8 +320,11 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                         self.expansion.to_expn_id(),
                         ty.span,
                     ),
-                    ImplTraitContext::Existential(_) => {
+                    ImplTraitContext::Existential(None) => {
                         self.create_def(node_id, DefPathData::ImplTrait, ty.span)
+                    }
+                    ImplTraitContext::Existential(Some(_)) => {
+                        self.create_def(ty.id, DefPathData::TypeNs(kw::Empty), ty.span)
                     }
                 };
                 self.with_parent(parent_def, |this| visit::walk_ty(this, ty))

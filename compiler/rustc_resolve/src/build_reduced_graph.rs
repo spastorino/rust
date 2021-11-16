@@ -1378,6 +1378,16 @@ impl<'a, 'b> Visitor<'b> for BuildReducedGraphVisitor<'a, 'b> {
         }
 
         if ctxt == AssocCtxt::Trait {
+            if let AssocItemKind::Fn(box Fn { defaultness: _, ref sig, generics: _, body: None }) =
+                item.kind
+            {
+                if let ast::FnRetTy::Ty(t) = &sig.decl.output {
+                    if let ast::TyKind::ImplTrait(assoc_ty_id, _) = t.kind {
+                        let local_def_id = self.r.local_def_id(assoc_ty_id);
+                        self.r.visibilities.insert(local_def_id, vis);
+                    }
+                }
+            }
             let (def_kind, ns) = match item.kind {
                 AssocItemKind::Const(..) => (DefKind::AssocConst, ValueNS),
                 AssocItemKind::Fn(box Fn { ref sig, .. }) => {

@@ -103,10 +103,9 @@ trait InTraitDefnParameters {
     fn in_parameters(_: impl Debug);
 }
 
-// Disallowed
+// Allowed
 trait InTraitDefnReturn {
     fn in_return() -> impl Debug;
-    //~^ ERROR `impl Trait` not allowed outside of function and method return types
 }
 
 // Allowed and disallowed in trait impls

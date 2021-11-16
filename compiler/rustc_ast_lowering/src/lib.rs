@@ -1592,14 +1592,21 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             )
         } else {
             match decl.output {
-                FnRetTy::Ty(ref ty) => {
-                    let context = match (self.trait_ctxt, &ty.kind) {
-                        (TraitContext::Trait(_), TyKind::ImplTrait(_, _))
-                            if impl_trait_return_allow =>
-                        {
-                            ImplTraitContext::disallowed()
-                        }
-                        _ => match in_band_ty_params {
+                FnRetTy::Ty(ref ty) => match (self.trait_ctxt, &ty.kind) {
+                    (TraitContext::Trait(trait_id), TyKind::ImplTrait(assoc_type_id, _))
+                        if impl_trait_return_allow =>
+                    {
+                        let trait_id = self.resolver.local_def_id(trait_id).to_def_id();
+
+                        self.lower_impl_trait_in_trait(
+                            decl.output.span(),
+                            trait_id,
+                            ty.id,
+                            *assoc_type_id,
+                        )
+                    }
+                    _ => {
+                        let context = match in_band_ty_params {
                             Some((def_id, _)) if impl_trait_return_allow => {
                                 ImplTraitContext::ReturnPositionOpaqueTy {
                                     fn_def_id: def_id,
@@ -1607,10 +1614,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                 }
                             }
                             _ => ImplTraitContext::disallowed(),
-                        },
-                    };
-                    hir::FnRetTy::Return(self.lower_ty(ty, context))
-                }
+                        };
+                        hir::FnRetTy::Return(self.lower_ty(ty, context))
+                    }
+                },
                 FnRetTy::Default(span) => hir::FnRetTy::DefaultReturn(self.lower_span(span)),
             }
         };
@@ -1644,6 +1651,76 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 }
             }),
         })
+    }
+
+    // Transforms `-> T` for `async fn` into `-> OpaqueTy { .. }`
+    // combined with the following definition of `OpaqueTy`:
+    //
+    //     type OpaqueTy<generics_from_parent_fn> = impl Future<Output = T>;
+    //
+    // `output`: unlowered output type (`T` in `-> T`)
+    // `trait_id`: `DefId` of the parent trait (used to create child associated type definition)
+    // `return_ty_id`: `NodeId` of the opaque `impl Trait` type that should be created
+    // `assoc_ty_id`: `NodeId` of the opaque `impl Trait` type that should be created
+    fn lower_impl_trait_in_trait(
+        &mut self,
+        span: Span,
+        trait_id: DefId,
+        return_ty_id: NodeId,
+        assoc_ty_id: NodeId,
+    ) -> hir::FnRetTy<'hir> {
+        debug!(
+            "lower_impl_trait_in_trait(\
+             span={:?}, \
+             trait_id={:?}, \
+             return_ty_id={:?}, \
+             assoc_type_id={:?})",
+            span, trait_id, return_ty_id, assoc_ty_id,
+        );
+
+        self.with_hir_id_owner(assoc_ty_id, |lctx| {
+            let def_id = lctx.resolver.local_def_id(assoc_ty_id);
+
+            let item = hir::TraitItem {
+                def_id,
+                ident: Ident::from_str("__Assoc"),
+                generics: hir::Generics::empty(),
+                kind: hir::TraitItemKind::Type(&[], None),
+                span: lctx.lower_span(span),
+            };
+
+            hir::OwnerNode::TraitItem(lctx.arena.alloc(item))
+        });
+
+        let return_ty_span = self.mark_span_with_reason(DesugaringKind::OpaqueTy, span, None);
+
+        let return_ty_id = self.lower_node_id(return_ty_id);
+
+        let self_ty = hir::TyKind::Path(hir::QPath::Resolved(
+            None,
+            self.arena.alloc(hir::Path {
+                res: self.lower_res(Res::SelfTy(Some(trait_id), None)),
+                segments: arena_vec![self; hir::PathSegment::from_ident(
+                    Ident::with_dummy_span(kw::SelfUpper)
+                )],
+                span: self.lower_span(span),
+            }),
+        ));
+
+        let trait_ty = self.arena.alloc(hir::Ty {
+            hir_id: return_ty_id,
+            kind: self_ty,
+            span: self.lower_span(span),
+        });
+
+        let ret_ty_ref = hir::TyKind::Path(hir::QPath::TypeRelative(
+            trait_ty,
+            self.arena.alloc(hir::PathSegment::from_ident(Ident::from_str("__Assoc"))),
+        ));
+
+        let ret_ty = self.ty(return_ty_span, ret_ty_ref);
+        let ret_ty = self.arena.alloc(ret_ty);
+        hir::FnRetTy::Return(ret_ty)
     }
 
     // Transforms `-> T` for `async fn` into `-> OpaqueTy { .. }`
