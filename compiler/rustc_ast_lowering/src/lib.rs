@@ -1697,7 +1697,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
             let item = hir::TraitItem {
                 def_id,
-                ident: Ident::from_str("__Assoc"),
+                ident: Ident::empty(),
                 generics: hir::Generics::empty(),
                 kind: hir::TraitItemKind::Type(hir_bounds, None),
                 span: lctx.lower_span(span),
@@ -1727,7 +1727,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         hir::TyKind::Path(hir::QPath::TypeRelative(
             trait_ty,
-            self.arena.alloc(hir::PathSegment::from_ident(Ident::from_str("__Assoc"))),
+            self.arena.alloc(hir::PathSegment::from_ident(Ident::empty())),
         ))
     }
 

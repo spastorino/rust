@@ -432,7 +432,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                                         id: hir::TraitItemId {
                                             def_id: self.resolver.local_def_id(assoc_item_id),
                                         },
-                                        ident: Ident::from_str("__Assoc"),
+                                        ident: Ident::empty(),
                                         span: self.lower_span(item.span),
                                         defaultness: hir::Defaultness::Default { has_value: false },
                                         kind: hir::AssocItemKind::Type,
