@@ -132,7 +132,7 @@ fn diagnostic_hir_wf_check<'tcx>(
                 ref item => bug!("Unexpected ImplItem {:?}", item),
             },
             hir::Node::TraitItem(item) => match item.kind {
-                hir::TraitItemKind::Type(_, ty) => ty,
+                hir::TraitItemKind::Type(_, ty, _) => ty,
                 hir::TraitItemKind::Const(ty, _) => Some(ty),
                 ref item => bug!("Unexpected TraitItem {:?}", item),
             },

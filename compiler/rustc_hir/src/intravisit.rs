@@ -748,6 +748,9 @@ pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty<'v>) {
             visitor.visit_nested_item(item_id);
             walk_list!(visitor, visit_generic_arg, lifetimes);
         }
+        TyKind::Rpitit(_, lifetimes) => {
+            walk_list!(visitor, visit_generic_arg, lifetimes);
+        }
         TyKind::Array(ref ty, ref length) => {
             visitor.visit_ty(ty);
             visitor.visit_anon_const(length)
@@ -1022,7 +1025,7 @@ pub fn walk_trait_item<'v, V: Visitor<'v>>(visitor: &mut V, trait_item: &'v Trai
                 trait_item.hir_id(),
             );
         }
-        TraitItemKind::Type(bounds, ref default) => {
+        TraitItemKind::Type(bounds, ref default, _) => {
             visitor.visit_id(trait_item.hir_id());
             walk_list!(visitor, visit_param_bound, bounds);
             walk_list!(visitor, visit_ty, default);

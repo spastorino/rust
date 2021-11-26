@@ -2343,6 +2343,17 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                     ref i => bug!("`impl Trait` pointed to non-opaque type?? {:#?}", i),
                 }
             }
+            hir::TyKind::Rpitit(item_id, lifetimes) => {
+                let ty = tcx.hir().trait_item(item_id);
+                let def_id = ty.def_id.to_def_id();
+
+                match ty.kind {
+                    hir::TraitItemKind::Type(_, _, Some(_fn_def_id)) => {
+                        self.impl_trait_in_trait_ty_to_ty(def_id, lifetimes, true)
+                    }
+                    ref i => bug!("`impl Trait` pointed to non-opaque type?? {:#?}", i),
+                }
+            }
             hir::TyKind::Path(hir::QPath::TypeRelative(ref qself, ref segment)) => {
                 debug!(?qself, ?segment);
                 let ty = self.ast_ty_to_ty(qself);
@@ -2395,18 +2406,19 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         result_ty
     }
 
-    fn impl_trait_ty_to_ty(
+    fn opaque_ty_to_ty(
         &self,
         def_id: DefId,
         lifetimes: &[hir::GenericArg<'_>],
         replace_parent_lifetimes: bool,
+        f: impl Fn(SubstsRef<'tcx>) -> Ty<'tcx>,
     ) -> Ty<'tcx> {
-        debug!("impl_trait_ty_to_ty(def_id={:?}, lifetimes={:?})", def_id, lifetimes);
+        debug!("opaque_ty_to_ty(def_id={:?}, lifetimes={:?})", def_id, lifetimes);
         let tcx = self.tcx();
 
         let generics = tcx.generics_of(def_id);
 
-        debug!("impl_trait_ty_to_ty: generics={:?}", generics);
+        debug!("opaque_ty_to_ty: generics={:?}", generics);
         let substs = InternalSubsts::for_item(tcx, def_id, |param, _| {
             if let Some(i) = (param.index as usize).checked_sub(generics.parent_count) {
                 // Our own parameters are the resolved lifetimes.
@@ -2436,11 +2448,33 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 }
             }
         });
-        debug!("impl_trait_ty_to_ty: substs={:?}", substs);
+        debug!("opaque_ty_to_ty: substs={:?}", substs);
 
-        let ty = tcx.mk_opaque(def_id, substs);
-        debug!("impl_trait_ty_to_ty: {}", ty);
+        let ty = f(substs);
+        debug!("opaque_ty_to_ty: {}", ty);
         ty
+    }
+
+    fn impl_trait_ty_to_ty(
+        &self,
+        def_id: DefId,
+        lifetimes: &[hir::GenericArg<'_>],
+        replace_parent_lifetimes: bool,
+    ) -> Ty<'tcx> {
+        self.opaque_ty_to_ty(def_id, lifetimes, replace_parent_lifetimes, |substs| {
+            self.tcx().mk_opaque(def_id, substs)
+        })
+    }
+
+    fn impl_trait_in_trait_ty_to_ty(
+        &self,
+        def_id: DefId,
+        lifetimes: &[hir::GenericArg<'_>],
+        replace_parent_lifetimes: bool,
+    ) -> Ty<'tcx> {
+        self.opaque_ty_to_ty(def_id, lifetimes, replace_parent_lifetimes, |substs| {
+            self.tcx().mk_projection(def_id, substs)
+        })
     }
 
     pub fn ty_of_arg(&self, ty: &hir::Ty<'_>, expected_ty: Option<Ty<'tcx>>) -> Ty<'tcx> {

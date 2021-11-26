@@ -1142,7 +1142,7 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
                 );
                 self.missing_named_lifetime_spots.pop();
             }
-            Type(bounds, ref ty) => {
+            Type(bounds, ref ty, _) => {
                 self.missing_named_lifetime_spots.push((&trait_item.generics).into());
                 let generics = &trait_item.generics;
                 let mut index = self.next_early_index();

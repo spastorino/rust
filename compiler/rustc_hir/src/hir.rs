@@ -2024,9 +2024,9 @@ pub enum TraitItemKind<'hir> {
     Const(&'hir Ty<'hir>, Option<BodyId>),
     /// An associated function with an optional body.
     Fn(FnSig<'hir>, TraitFn<'hir>),
-    /// An associated type with (possibly empty) bounds and optional concrete
-    /// type.
-    Type(GenericBounds<'hir>, Option<&'hir Ty<'hir>>),
+    /// An associated type with (possibly empty) bounds, optional concrete
+    /// type and optional fn def id.
+    Type(GenericBounds<'hir>, Option<&'hir Ty<'hir>>, Option<DefId>),
 }
 
 // The bodies for items are stored "out of line", in a separate
@@ -2277,6 +2277,7 @@ pub enum TyKind<'hir> {
     /// The generic argument list contains the lifetimes (and in the future
     /// possibly parameters) that are actually bound on the `impl Trait`.
     OpaqueDef(ItemId, &'hir [GenericArg<'hir>]),
+    Rpitit(TraitItemId, &'hir [GenericArg<'hir>]),
     /// A trait object type `Bound1 + Bound2 + Bound3`
     /// where `Bound` is a trait or a lifetime.
     TraitObject(&'hir [PolyTraitRef<'hir>], Lifetime, TraitObjectSyntax),

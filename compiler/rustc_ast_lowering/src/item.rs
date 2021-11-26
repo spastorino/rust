@@ -851,6 +851,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 let kind = hir::TraitItemKind::Type(
                     self.lower_param_bounds(bounds, ImplTraitContext::disallowed()),
                     ty,
+                    None,
                 );
 
                 (generics, kind)

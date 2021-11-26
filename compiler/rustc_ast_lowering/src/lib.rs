@@ -255,6 +255,9 @@ enum ImplTraitContext<'b, 'a> {
     ReturnPositionInTrait {
         /// `DefId` for the parent trait where the associated type is going to be defined.
         trait_def_id: DefId,
+
+        /// `DefId` for the parent fn where the impl trait shows up.
+        fn_def_id: DefId,
     },
 
     /// Impl trait in type aliases.
@@ -301,8 +304,8 @@ impl<'a> ImplTraitContext<'_, 'a> {
             ReturnPositionOpaqueTy { fn_def_id, origin } => {
                 ReturnPositionOpaqueTy { fn_def_id: *fn_def_id, origin: *origin }
             }
-            ReturnPositionInTrait { trait_def_id } => {
-                ReturnPositionInTrait { trait_def_id: *trait_def_id }
+            ReturnPositionInTrait { trait_def_id, fn_def_id } => {
+                ReturnPositionInTrait { trait_def_id: *trait_def_id, fn_def_id: *fn_def_id }
             }
             TypeAliasesOpaqueTy { capturable_lifetimes } => {
                 TypeAliasesOpaqueTy { capturable_lifetimes }
@@ -1334,10 +1337,15 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             None,
                             |this| this.lower_param_bounds(bounds, itctx),
                         ),
-                    ImplTraitContext::ReturnPositionInTrait { trait_def_id } => self
-                        .lower_impl_trait_in_trait(span, trait_def_id, t.id, def_node_id, |this| {
-                            this.lower_param_bounds(bounds, itctx)
-                        }),
+                    ImplTraitContext::ReturnPositionInTrait { trait_def_id, fn_def_id } => self
+                        .lower_impl_trait_in_trait(
+                            span,
+                            trait_def_id,
+                            fn_def_id,
+                            t.id,
+                            def_node_id,
+                            |this| this.lower_param_bounds(bounds, itctx),
+                        ),
                     ImplTraitContext::TypeAliasesOpaqueTy { ref capturable_lifetimes } => {
                         // Reset capturable lifetimes, any nested impl trait
                         // types will inherit lifetimes from this opaque type,
@@ -1610,23 +1618,25 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         } else {
             match decl.output {
                 FnRetTy::Ty(ref ty) => {
-                    let context = match (self.trait_ctxt, &ty.kind) {
-                        (TraitContext::Trait(trait_id), TyKind::ImplTrait(_, _))
-                            if impl_trait_return_allow =>
-                        {
-                            let trait_def_id = self.resolver.local_def_id(trait_id).to_def_id();
+                    let context = match in_band_ty_params {
+                        Some((def_id, _)) if impl_trait_return_allow => {
+                            match (self.trait_ctxt, &ty.kind) {
+                                (TraitContext::Trait(trait_id), TyKind::ImplTrait(_, _)) => {
+                                    let trait_def_id =
+                                        self.resolver.local_def_id(trait_id).to_def_id();
 
-                            ImplTraitContext::ReturnPositionInTrait { trait_def_id }
-                        }
-                        _ => match in_band_ty_params {
-                            Some((def_id, _)) if impl_trait_return_allow => {
-                                ImplTraitContext::ReturnPositionOpaqueTy {
+                                    ImplTraitContext::ReturnPositionInTrait {
+                                        trait_def_id,
+                                        fn_def_id: def_id,
+                                    }
+                                }
+                                _ => ImplTraitContext::ReturnPositionOpaqueTy {
                                     fn_def_id: def_id,
                                     origin: hir::OpaqueTyOrigin::FnReturn,
-                                }
+                                },
                             }
-                            _ => ImplTraitContext::disallowed(),
-                        },
+                        }
+                        _ => ImplTraitContext::disallowed(),
                     };
                     hir::FnRetTy::Return(self.lower_ty(ty, context))
                 }
@@ -1678,6 +1688,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         &mut self,
         span: Span,
         trait_id: DefId,
+        fn_def_id: DefId,
         return_ty_id: NodeId,
         assoc_ty_id: NodeId,
         lower_bounds: impl FnOnce(&mut Self) -> hir::GenericBounds<'hir>,
@@ -1699,36 +1710,15 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 def_id,
                 ident: Ident::empty(),
                 generics: hir::Generics::empty(),
-                kind: hir::TraitItemKind::Type(hir_bounds, None),
+                kind: hir::TraitItemKind::Type(hir_bounds, None, Some(fn_def_id)),
                 span: lctx.lower_span(span),
             };
 
             hir::OwnerNode::TraitItem(lctx.arena.alloc(item))
         });
 
-        let return_ty_id = self.lower_node_id(return_ty_id);
-
-        let self_ty = hir::TyKind::Path(hir::QPath::Resolved(
-            None,
-            self.arena.alloc(hir::Path {
-                res: self.lower_res(Res::SelfTy(Some(trait_id), None)),
-                segments: arena_vec![self; hir::PathSegment::from_ident(
-                    Ident::with_dummy_span(kw::SelfUpper)
-                )],
-                span: self.lower_span(span),
-            }),
-        ));
-
-        let trait_ty = self.arena.alloc(hir::Ty {
-            hir_id: return_ty_id,
-            kind: self_ty,
-            span: self.lower_span(span),
-        });
-
-        hir::TyKind::Path(hir::QPath::TypeRelative(
-            trait_ty,
-            self.arena.alloc(hir::PathSegment::from_ident(Ident::empty())),
-        ))
+        let assoc_ty_def_id = self.resolver.local_def_id(assoc_ty_id);
+        hir::TyKind::Rpitit(hir::TraitItemId { def_id: assoc_ty_def_id }, &[])
     }
 
     // Transforms `-> T` for `async fn` into `-> OpaqueTy { .. }`

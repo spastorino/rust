@@ -873,7 +873,7 @@ fn convert_trait_item(tcx: TyCtxt<'_>, trait_item_id: hir::TraitItemId) {
             placeholder_type_error(tcx, None, &[], visitor.0, false, None, "constant");
         }
 
-        hir::TraitItemKind::Type(_, Some(_)) => {
+        hir::TraitItemKind::Type(_, Some(_), _) => {
             tcx.ensure().item_bounds(trait_item_id.def_id);
             tcx.ensure().type_of(trait_item_id.def_id);
             // Account for `type T = _;`.
@@ -882,7 +882,7 @@ fn convert_trait_item(tcx: TyCtxt<'_>, trait_item_id: hir::TraitItemId) {
             placeholder_type_error(tcx, None, &[], visitor.0, false, None, "associated type");
         }
 
-        hir::TraitItemKind::Type(_, None) => {
+        hir::TraitItemKind::Type(_, None, _) => {
             tcx.ensure().item_bounds(trait_item_id.def_id);
             // #74612: Visit and try to find bad placeholders
             // even if there is no concrete type.
@@ -1394,11 +1394,15 @@ fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::Generics {
 
     let node = tcx.hir().get(hir_id);
     let parent_def_id = match node {
-        Node::ImplItem(_)
-        | Node::TraitItem(_)
-        | Node::Variant(_)
-        | Node::Ctor(..)
-        | Node::Field(_) => {
+        Node::TraitItem(item) => match item.kind {
+            TraitItemKind::Type(_, _, Some(def_id)) => Some(def_id),
+
+            _ => {
+                let parent_id = tcx.hir().get_parent_item(hir_id);
+                Some(tcx.hir().local_def_id(parent_id).to_def_id())
+            }
+        },
+        Node::ImplItem(_) | Node::Variant(_) | Node::Ctor(..) | Node::Field(_) => {
             let parent_id = tcx.hir().get_parent_item(hir_id);
             Some(tcx.hir().local_def_id(parent_id).to_def_id())
         }

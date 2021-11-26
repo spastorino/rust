@@ -82,7 +82,7 @@ pub(super) fn explicit_item_bounds(
     let hir_id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
     match tcx.hir().get(hir_id) {
         hir::Node::TraitItem(hir::TraitItem {
-            kind: hir::TraitItemKind::Type(bounds, _),
+            kind: hir::TraitItemKind::Type(bounds, _, _),
             span,
             ..
         }) => associated_type_bounds(tcx, def_id, bounds, *span),

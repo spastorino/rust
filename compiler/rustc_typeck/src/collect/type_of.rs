@@ -324,8 +324,8 @@ pub(super) fn type_of(tcx: TyCtxt<'_>, def_id: DefId) -> Ty<'_> {
                     }
                 })
                 .unwrap_or_else(|| icx.to_ty(ty)),
-            TraitItemKind::Type(_, Some(ty)) => icx.to_ty(ty),
-            TraitItemKind::Type(_, None) => {
+            TraitItemKind::Type(_, Some(ty), _) => icx.to_ty(ty),
+            TraitItemKind::Type(_, None, _) => {
                 span_bug!(item.span, "associated type missing default");
             }
         },

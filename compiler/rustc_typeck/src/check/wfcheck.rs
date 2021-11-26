@@ -201,7 +201,7 @@ pub fn check_trait_item(tcx: TyCtxt<'_>, def_id: LocalDefId) {
 
     let (method_sig, span) = match trait_item.kind {
         hir::TraitItemKind::Fn(ref sig, _) => (Some(sig), trait_item.span),
-        hir::TraitItemKind::Type(_bounds, Some(ty)) => (None, ty.span),
+        hir::TraitItemKind::Type(_bounds, Some(ty), _) => (None, ty.span),
         _ => (None, trait_item.span),
     };
     check_object_unsafe_self_trait_by_name(tcx, trait_item);
@@ -639,7 +639,7 @@ fn check_object_unsafe_self_trait_by_name(tcx: TyCtxt<'_>, item: &hir::TraitItem
     };
     let mut trait_should_be_self = vec![];
     match &item.kind {
-        hir::TraitItemKind::Const(ty, _) | hir::TraitItemKind::Type(_, Some(ty))
+        hir::TraitItemKind::Const(ty, _) | hir::TraitItemKind::Type(_, Some(ty), _)
             if could_be_self(trait_def_id, ty) =>
         {
             trait_should_be_self.push(ty.span)

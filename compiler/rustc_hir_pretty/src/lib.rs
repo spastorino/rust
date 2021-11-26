@@ -390,6 +390,7 @@ impl<'a> State<'a> {
                 );
             }
             hir::TyKind::OpaqueDef(..) => self.s.word("/*impl Trait*/"),
+            hir::TyKind::Rpitit(..) => self.s.word("/*RPITIT*/"),
             hir::TyKind::Path(ref qpath) => self.print_qpath(qpath, false),
             hir::TyKind::TraitObject(bounds, ref lifetime, syntax) => {
                 if syntax == ast::TraitObjectSyntax::Dyn {
@@ -963,7 +964,7 @@ impl<'a> State<'a> {
                 self.end(); // need to close a box
                 self.ann.nested(self, Nested::Body(body));
             }
-            hir::TraitItemKind::Type(ref bounds, ref default) => {
+            hir::TraitItemKind::Type(ref bounds, ref default, _) => {
                 self.print_associated_type(
                     ti.ident,
                     &ti.generics,

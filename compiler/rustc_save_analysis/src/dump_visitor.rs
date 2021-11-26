@@ -1011,7 +1011,7 @@ impl<'tcx> DumpVisitor<'tcx> {
                     trait_item.span,
                 );
             }
-            hir::TraitItemKind::Type(ref bounds, ref default_ty) => {
+            hir::TraitItemKind::Type(ref bounds, ref default_ty, _) => {
                 // FIXME do something with _bounds (for type refs)
                 let name = trait_item.ident.name.to_string();
                 let qualname =

@@ -320,6 +320,10 @@ impl<'hir> Sig for hir::Ty<'hir> {
                 let item = scx.tcx.hir().item(item_id);
                 item.make(offset, Some(item_id.hir_id()), scx)
             }
+            hir::TyKind::Rpitit(trait_item_id, _) => {
+                let trait_item = scx.tcx.hir().trait_item(trait_item_id);
+                make_assoc_type_signature(trait_item.hir_id(), Ident::empty(), None, None, scx)
+            }
             hir::TyKind::Typeof(_) | hir::TyKind::Infer | hir::TyKind::Err => Err("Ty"),
         }
     }
