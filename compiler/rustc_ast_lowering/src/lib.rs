@@ -1334,9 +1334,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             None,
                             |this| this.lower_param_bounds(bounds, itctx),
                         ),
-                    ImplTraitContext::ReturnPositionInTrait { trait_def_id } => {
-                        self.lower_impl_trait_in_trait(span, trait_def_id, t.id, def_node_id)
-                    }
+                    ImplTraitContext::ReturnPositionInTrait { trait_def_id } => self
+                        .lower_impl_trait_in_trait(span, trait_def_id, t.id, def_node_id, |this| {
+                            this.lower_param_bounds(bounds, itctx)
+                        }),
                     ImplTraitContext::TypeAliasesOpaqueTy { ref capturable_lifetimes } => {
                         // Reset capturable lifetimes, any nested impl trait
                         // types will inherit lifetimes from this opaque type,
@@ -1679,24 +1680,26 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         trait_id: DefId,
         return_ty_id: NodeId,
         assoc_ty_id: NodeId,
+        lower_bounds: impl FnOnce(&mut Self) -> hir::GenericBounds<'hir>,
     ) -> hir::TyKind<'hir> {
         debug!(
             "lower_impl_trait_in_trait(\
              span={:?}, \
              trait_id={:?}, \
              return_ty_id={:?}, \
-             assoc_type_id={:?})",
+             assoc_ty_id={:?})",
             span, trait_id, return_ty_id, assoc_ty_id,
         );
 
         self.with_hir_id_owner(assoc_ty_id, |lctx| {
             let def_id = lctx.resolver.local_def_id(assoc_ty_id);
+            let hir_bounds = lower_bounds(lctx);
 
             let item = hir::TraitItem {
                 def_id,
                 ident: Ident::from_str("__Assoc"),
                 generics: hir::Generics::empty(),
-                kind: hir::TraitItemKind::Type(&[], None),
+                kind: hir::TraitItemKind::Type(hir_bounds, None),
                 span: lctx.lower_span(span),
             };
 
