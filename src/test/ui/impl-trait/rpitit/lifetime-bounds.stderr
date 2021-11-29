@@ -1,0 +1,14 @@
+error[E0499]: cannot borrow `*y` as mutable more than once at a time
+  --> $DIR/lifetime-bounds.rs:11:20
+   |
+LL |     let a = T::bar(y);
+   |                    - first mutable borrow occurs here
+LL |     let b = T::bar(y);
+   |                    ^ second mutable borrow occurs here
+LL |
+LL |     let c = a;
+   |             - first borrow later used here
+
+error: aborting due to previous error
+
+For more information about this error, try `rustc --explain E0499`.

@@ -1702,14 +1702,57 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             span, trait_id, return_ty_id, assoc_ty_id,
         );
 
+        let assoc_ty_def_id = self.resolver.local_def_id(assoc_ty_id);
+
+        let mut collected_lifetimes = Vec::new();
         self.with_hir_id_owner(assoc_ty_id, |lctx| {
             let def_id = lctx.resolver.local_def_id(assoc_ty_id);
             let hir_bounds = lower_bounds(lctx);
 
+            collected_lifetimes = lifetimes_from_impl_trait_bounds(assoc_ty_id, &hir_bounds, None);
+
+            let lifetime_defs =
+                lctx.arena.alloc_from_iter(collected_lifetimes.iter().map(|&(name, span)| {
+                    let def_node_id = lctx.resolver.next_node_id();
+                    let hir_id = lctx.lower_node_id(def_node_id);
+
+                    lctx.resolver.create_def(
+                        assoc_ty_def_id,
+                        def_node_id,
+                        DefPathData::LifetimeNs(name.ident().name),
+                        ExpnId::root(),
+                        span.with_parent(None),
+                    );
+
+                    let (name, kind) = match name {
+                        hir::LifetimeName::Underscore => (
+                            hir::ParamName::Plain(Ident::with_dummy_span(kw::UnderscoreLifetime)),
+                            hir::LifetimeParamKind::Elided,
+                        ),
+                        hir::LifetimeName::Param(param_name) => {
+                            (param_name, hir::LifetimeParamKind::Explicit)
+                        }
+                        _ => panic!("expected `LifetimeName::Param` or `ParamName::Plain`"),
+                    };
+
+                    hir::GenericParam {
+                        hir_id,
+                        name,
+                        span,
+                        pure_wrt_drop: false,
+                        bounds: &[],
+                        kind: hir::GenericParamKind::Lifetime { kind },
+                    }
+                }));
+
             let item = hir::TraitItem {
                 def_id,
                 ident: Ident::empty(),
-                generics: hir::Generics::empty(),
+                generics: hir::Generics {
+                    params: lifetime_defs,
+                    where_clause: hir::WhereClause { predicates: &[], span: lctx.lower_span(span) },
+                    span: lctx.lower_span(span),
+                },
                 kind: hir::TraitItemKind::Type(hir_bounds, None, Some(fn_def_id)),
                 span: lctx.lower_span(span),
             };
@@ -1717,8 +1760,14 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             hir::OwnerNode::TraitItem(lctx.arena.alloc(item))
         });
 
-        let assoc_ty_def_id = self.resolver.local_def_id(assoc_ty_id);
-        hir::TyKind::Rpitit(hir::TraitItemId { def_id: assoc_ty_def_id }, &[])
+        let lifetimes =
+            self.arena.alloc_from_iter(collected_lifetimes.into_iter().map(|(name, span)| {
+                hir::GenericArg::Lifetime(hir::Lifetime { hir_id: self.next_id(), span, name })
+            }));
+
+        debug!("lower_impl_trait_in_trait: lifetimes={:#?}", lifetimes);
+
+        hir::TyKind::Rpitit(hir::TraitItemId { def_id: assoc_ty_def_id }, lifetimes)
     }
 
     // Transforms `-> T` for `async fn` into `-> OpaqueTy { .. }`
