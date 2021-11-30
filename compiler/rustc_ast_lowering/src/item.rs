@@ -269,6 +269,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                             this.lower_fn_decl(
                                 &decl,
                                 Some((fn_def_id.to_def_id(), idty)),
+                                Some(*ident),
                                 true,
                                 ret_id,
                             )
@@ -432,7 +433,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                                         id: hir::TraitItemId {
                                             def_id: self.resolver.local_def_id(assoc_item_id),
                                         },
-                                        ident: Ident::empty(),
+                                        ident: *ident,
                                         span: self.lower_span(item.span),
                                         defaultness: hir::Defaultness::Default { has_value: false },
                                         kind: hir::AssocItemKind::Type,
@@ -718,7 +719,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                         |this, _| {
                             (
                                 // Disallow `impl Trait` in foreign items.
-                                this.lower_fn_decl(fdec, None, false, None),
+                                this.lower_fn_decl(fdec, None, None, false, None),
                                 this.lower_fn_params_to_names(fdec),
                             )
                         },
@@ -828,8 +829,14 @@ impl<'hir> LoweringContext<'_, 'hir> {
             }
             AssocItemKind::Fn(box Fn { ref sig, ref generics, body: None, .. }) => {
                 let names = self.lower_fn_params_to_names(&sig.decl);
-                let (generics, sig) =
-                    self.lower_method_sig(generics, sig, trait_item_def_id, true, None);
+                let (generics, sig) = self.lower_method_sig(
+                    generics,
+                    sig,
+                    trait_item_def_id,
+                    Some(i.ident),
+                    true,
+                    None,
+                );
                 (generics, hir::TraitItemKind::Fn(sig, hir::TraitFn::Required(names)))
             }
             AssocItemKind::Fn(box Fn { ref sig, ref generics, body: Some(ref body), .. }) => {
@@ -840,6 +847,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     generics,
                     sig,
                     trait_item_def_id,
+                    Some(i.ident),
                     false,
                     asyncness.opt_return_id(),
                 );
@@ -917,6 +925,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     generics,
                     sig,
                     impl_item_def_id,
+                    Some(i.ident),
                     !self.trait_ctxt.is_impl_trait(),
                     asyncness.opt_return_id(),
                 );
@@ -1302,6 +1311,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         generics: &Generics,
         sig: &FnSig,
         fn_def_id: LocalDefId,
+        ident: Option<Ident>,
         impl_trait_return_allow: bool,
         is_async: Option<NodeId>,
     ) -> (hir::Generics<'hir>, hir::FnSig<'hir>) {
@@ -1314,6 +1324,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 this.lower_fn_decl(
                     &sig.decl,
                     Some((fn_def_id.to_def_id(), idty)),
+                    ident,
                     impl_trait_return_allow,
                     is_async,
                 )

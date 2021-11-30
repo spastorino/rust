@@ -256,6 +256,9 @@ enum ImplTraitContext<'b, 'a> {
         /// `DefId` for the parent trait where the associated type is going to be defined.
         trait_def_id: DefId,
 
+        /// `Ident` of the parent trait where the associated type is going to be defined.
+        ident: Ident,
+
         /// `DefId` for the parent fn where the impl trait shows up.
         fn_def_id: DefId,
     },
@@ -304,9 +307,11 @@ impl<'a> ImplTraitContext<'_, 'a> {
             ReturnPositionOpaqueTy { fn_def_id, origin } => {
                 ReturnPositionOpaqueTy { fn_def_id: *fn_def_id, origin: *origin }
             }
-            ReturnPositionInTrait { trait_def_id, fn_def_id } => {
-                ReturnPositionInTrait { trait_def_id: *trait_def_id, fn_def_id: *fn_def_id }
-            }
+            ReturnPositionInTrait { trait_def_id, ident, fn_def_id } => ReturnPositionInTrait {
+                trait_def_id: *trait_def_id,
+                ident: *ident,
+                fn_def_id: *fn_def_id,
+            },
             TypeAliasesOpaqueTy { capturable_lifetimes } => {
                 TypeAliasesOpaqueTy { capturable_lifetimes }
             }
@@ -1257,7 +1262,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         ),
                         unsafety: this.lower_unsafety(f.unsafety),
                         abi: this.lower_extern(f.ext),
-                        decl: this.lower_fn_decl(&f.decl, None, false, None),
+                        decl: this.lower_fn_decl(&f.decl, None, None, false, None),
                         param_names: this.lower_fn_params_to_names(&f.decl),
                     }))
                 })
@@ -1337,15 +1342,17 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             None,
                             |this| this.lower_param_bounds(bounds, itctx),
                         ),
-                    ImplTraitContext::ReturnPositionInTrait { trait_def_id, fn_def_id } => self
-                        .lower_impl_trait_in_trait(
+                    ImplTraitContext::ReturnPositionInTrait { trait_def_id, ident, fn_def_id } => {
+                        self.lower_impl_trait_in_trait(
                             span,
                             trait_def_id,
+                            ident,
                             fn_def_id,
                             t.id,
                             def_node_id,
                             |this| this.lower_param_bounds(bounds, itctx),
-                        ),
+                        )
+                    }
                     ImplTraitContext::TypeAliasesOpaqueTy { ref capturable_lifetimes } => {
                         // Reset capturable lifetimes, any nested impl trait
                         // types will inherit lifetimes from this opaque type,
@@ -1565,6 +1572,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         &mut self,
         decl: &FnDecl,
         mut in_band_ty_params: Option<(DefId, &mut Vec<hir::GenericParam<'hir>>)>,
+        ident: Option<Ident>,
         impl_trait_return_allow: bool,
         make_ret_async: Option<NodeId>,
     ) -> &'hir hir::FnDecl<'hir> {
@@ -1628,6 +1636,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                     ImplTraitContext::ReturnPositionInTrait {
                                         trait_def_id,
                                         fn_def_id: def_id,
+                                        ident: ident.expect("should have an ident"),
                                     }
                                 }
                                 _ => ImplTraitContext::ReturnPositionOpaqueTy {
@@ -1688,6 +1697,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         &mut self,
         span: Span,
         trait_id: DefId,
+        ident: Ident,
         fn_def_id: DefId,
         return_ty_id: NodeId,
         assoc_ty_id: NodeId,
@@ -1747,7 +1757,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
             let item = hir::TraitItem {
                 def_id,
-                ident: Ident::empty(),
+                ident,
                 generics: hir::Generics {
                     params: lifetime_defs,
                     where_clause: hir::WhereClause { predicates: &[], span: lctx.lower_span(span) },

@@ -776,7 +776,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         });
 
         // Lower outside new scope to preserve `is_in_loop_condition`.
-        let fn_decl = self.lower_fn_decl(decl, None, false, None);
+        let fn_decl = self.lower_fn_decl(decl, None, None, false, None);
 
         hir::ExprKind::Closure(
             capture_clause,
@@ -868,7 +868,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         // We need to lower the declaration outside the new scope, because we
         // have to conserve the state of being inside a loop condition for the
         // closure argument types.
-        let fn_decl = self.lower_fn_decl(&outer_decl, None, false, None);
+        let fn_decl = self.lower_fn_decl(&outer_decl, None, None, false, None);
 
         hir::ExprKind::Closure(
             capture_clause,

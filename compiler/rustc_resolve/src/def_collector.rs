@@ -7,7 +7,7 @@ use rustc_expand::expand::AstFragment;
 use rustc_hir::def_id::LocalDefId;
 use rustc_hir::definitions::*;
 use rustc_span::hygiene::LocalExpnId;
-use rustc_span::symbol::{kw, sym};
+use rustc_span::symbol::{kw, sym, Symbol};
 use rustc_span::Span;
 use tracing::debug;
 
@@ -17,13 +17,20 @@ crate fn collect_definitions(
     expansion: LocalExpnId,
 ) {
     let (parent_def, impl_trait_context) = resolver.invocation_parents[&expansion];
-    fragment.visit_with(&mut DefCollector { resolver, parent_def, expansion, impl_trait_context });
+    fragment.visit_with(&mut DefCollector {
+        resolver,
+        parent_def,
+        parent_name: None,
+        expansion,
+        impl_trait_context,
+    });
 }
 
 /// Creates `DefId`s for nodes in the AST.
 struct DefCollector<'a, 'b> {
     resolver: &'a mut Resolver<'b>,
     parent_def: LocalDefId,
+    parent_name: Option<Symbol>,
     impl_trait_context: ImplTraitContext,
     expansion: LocalExpnId,
 }
@@ -41,9 +48,16 @@ impl<'a, 'b> DefCollector<'a, 'b> {
         )
     }
 
-    fn with_parent<F: FnOnce(&mut Self)>(&mut self, parent_def: LocalDefId, f: F) {
+    fn with_parent<F: FnOnce(&mut Self)>(
+        &mut self,
+        parent_def: LocalDefId,
+        parent_name: Option<Symbol>,
+        f: F,
+    ) {
         let orig_parent_def = std::mem::replace(&mut self.parent_def, parent_def);
+        let orig_parent_name = std::mem::replace(&mut self.parent_name, parent_name);
         f(self);
+        self.parent_name = orig_parent_name;
         self.parent_def = orig_parent_def;
     }
 
@@ -72,7 +86,7 @@ impl<'a, 'b> DefCollector<'a, 'b> {
         } else {
             let name = field.ident.map_or_else(|| sym::integer(index(self)), |ident| ident.name);
             let def = self.create_def(field.id, DefPathData::ValueNs(name), field.span);
-            self.with_parent(def, |this| visit::walk_field_def(this, field));
+            self.with_parent(def, self.parent_name, |this| visit::walk_field_def(this, field));
         }
     }
 
@@ -96,7 +110,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                 let def = self.create_def(i.id, def_data, i.span);
 
                 return self.with_impl_trait(ImplTraitContext::Existential(Some(def)), |this| {
-                    this.with_parent(def, |this| visit::walk_item(this, i))
+                    this.with_parent(def, self.parent_name, |this| visit::walk_item(this, i))
                 });
             }
             ItemKind::Impl { .. } => DefPathData::Impl,
@@ -127,7 +141,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
         };
         let def = self.create_def(i.id, def_data, i.span);
 
-        self.with_parent(def, |this| {
+        self.with_parent(def, Some(i.ident.name), |this| {
             this.with_impl_trait(ImplTraitContext::Existential(None), |this| {
                 match i.kind {
                     ItemKind::Struct(ref struct_def, _) | ItemKind::Union(ref struct_def, _) => {
@@ -156,11 +170,13 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                 for param in &sig.decl.inputs {
                     self.visit_param(param);
                 }
-                self.with_parent(return_impl_trait_id, |this| {
+                self.with_parent(return_impl_trait_id, self.parent_name, |this| {
                     this.visit_fn_ret_ty(&sig.decl.output)
                 });
                 let closure_def = self.create_def(closure_id, DefPathData::ClosureExpr, span);
-                self.with_parent(closure_def, |this| walk_list!(this, visit_block, body));
+                self.with_parent(closure_def, self.parent_name, |this| {
+                    walk_list!(this, visit_block, body)
+                });
                 return;
             }
         }
@@ -176,7 +192,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                     self.resolver.create_def(
                         trait_def,
                         assoc_ty_id,
-                        DefPathData::TypeNs(kw::Empty),
+                        DefPathData::TypeNs(self.parent_name.expect("should have fn name")),
                         self.expansion.to_expn_id(),
                         t.span,
                     );
@@ -211,7 +227,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
             foreign_item.span,
         );
 
-        self.with_parent(def, |this| {
+        self.with_parent(def, self.parent_name, |this| {
             visit::walk_foreign_item(this, foreign_item);
         });
     }
@@ -221,7 +237,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
             return self.visit_macro_invoc(v.id);
         }
         let def = self.create_def(v.id, DefPathData::TypeNs(v.ident.name), v.span);
-        self.with_parent(def, |this| {
+        self.with_parent(def, self.parent_name, |this| {
             if let Some(ctor_hir_id) = v.data.ctor_id() {
                 this.create_def(ctor_hir_id, DefPathData::Ctor, v.span);
             }
@@ -270,7 +286,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
         };
 
         let def = self.create_def(i.id, def_data, i.span);
-        self.with_parent(def, |this| visit::walk_assoc_item(this, i, ctxt));
+        self.with_parent(def, self.parent_name, |this| visit::walk_assoc_item(this, i, ctxt));
     }
 
     fn visit_pat(&mut self, pat: &'a Pat) {
@@ -282,7 +298,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
 
     fn visit_anon_const(&mut self, constant: &'a AnonConst) {
         let def = self.create_def(constant.id, DefPathData::AnonConst, constant.value.span);
-        self.with_parent(def, |this| visit::walk_anon_const(this, constant));
+        self.with_parent(def, self.parent_name, |this| visit::walk_anon_const(this, constant));
     }
 
     fn visit_expr(&mut self, expr: &'a Expr) {
@@ -305,7 +321,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
             _ => self.parent_def,
         };
 
-        self.with_parent(parent_def, |this| visit::walk_expr(this, expr));
+        self.with_parent(parent_def, self.parent_name, |this| visit::walk_expr(this, expr));
     }
 
     fn visit_ty(&mut self, ty: &'a Ty) {
@@ -327,7 +343,7 @@ impl<'a, 'b> visit::Visitor<'a> for DefCollector<'a, 'b> {
                         self.create_def(ty.id, DefPathData::TypeNs(kw::Empty), ty.span)
                     }
                 };
-                self.with_parent(parent_def, |this| visit::walk_ty(this, ty))
+                self.with_parent(parent_def, self.parent_name, |this| visit::walk_ty(this, ty))
             }
             _ => visit::walk_ty(self, ty),
         }
