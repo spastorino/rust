@@ -152,8 +152,9 @@ struct LoweringContext<'a, 'hir: 'a> {
     in_scope_lifetimes: Vec<ParamName>,
 
     current_hir_id_owner: LocalDefId,
+    current_node_id_owner: NodeId,
     item_local_id_counter: hir::ItemLocalId,
-    node_id_to_hir_id: IndexVec<NodeId, Option<hir::HirId>>,
+    node_id_to_hir_id: Vec<Option<hir::HirId>>,
 
     /// NodeIds that are lowered inside the current HIR owner.
     local_node_ids: Vec<NodeId>,
@@ -308,9 +309,10 @@ pub fn lower_crate<'a, 'hir>(
         is_in_trait_impl: false,
         is_in_dyn_type: false,
         anonymous_lifetime_mode: AnonymousLifetimeMode::PassThrough,
+        current_node_id_owner: CRATE_NODE_ID,
         current_hir_id_owner: CRATE_DEF_ID,
         item_local_id_counter: hir::ItemLocalId::new(0),
-        node_id_to_hir_id: IndexVec::new(),
+        node_id_to_hir_id: Vec::new(),
         local_node_ids: Vec::new(),
         generator_kind: None,
         task_context: None,
@@ -440,12 +442,12 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let current_bodies = std::mem::take(&mut self.bodies);
         let current_node_ids = std::mem::take(&mut self.local_node_ids);
         let current_owner = std::mem::replace(&mut self.current_hir_id_owner, def_id);
+        let current_node_id_owner = std::mem::replace(&mut self.current_node_id_owner, owner);
         let current_local_counter =
             std::mem::replace(&mut self.item_local_id_counter, hir::ItemLocalId::new(1));
 
         // Always allocate the first `HirId` for the owner itself.
-        let _old = self.node_id_to_hir_id.insert(owner, hir::HirId::make_owner(def_id));
-        debug_assert_eq!(_old, None);
+        self.node_id_to_hir_id.push(Some(hir::HirId::make_owner(def_id)));
         self.local_node_ids.push(owner);
 
         let item = f(self);
@@ -456,7 +458,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.bodies = current_bodies;
         self.local_node_ids = current_node_ids;
         self.current_hir_id_owner = current_owner;
+        self.current_node_id_owner = current_node_id_owner;
         self.item_local_id_counter = current_local_counter;
+        //
+        self.node_id_to_hir_id.clear();
 
         self.owners.ensure_contains_elem(def_id, || hir::MaybeOwner::Phantom);
         self.owners[def_id] = hir::MaybeOwner::Owner(self.arena.alloc(info));
@@ -472,7 +477,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let local_id_to_def_id = local_node_ids
             .iter()
             .filter_map(|&node_id| {
-                let hir_id = self.node_id_to_hir_id[node_id]?;
+                let hir_id = self.node_id_to_hir_id
+                    [node_id.as_usize() - self.current_node_id_owner.as_usize()]?;
                 if hir_id.local_id == hir::ItemLocalId::new(0) {
                     None
                 } else {
@@ -490,7 +496,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let trait_map = local_node_ids
             .into_iter()
             .filter_map(|node_id| {
-                let hir_id = self.node_id_to_hir_id[node_id]?;
+                let hir_id = self.node_id_to_hir_id
+                    [node_id.as_usize() - self.current_node_id_owner.as_usize()]?;
                 let traits = self.resolver.take_trait_map(node_id)?;
                 Some((hir_id.local_id, traits.into_boxed_slice()))
             })
@@ -557,14 +564,23 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_node_id(&mut self, ast_node_id: NodeId) -> hir::HirId {
         assert_ne!(ast_node_id, DUMMY_NODE_ID);
 
-        *self.node_id_to_hir_id.get_or_insert_with(ast_node_id, || {
+        let idx = ast_node_id.as_usize() - self.current_node_id_owner.as_usize();
+
+        if let Some(Some(hir_id)) = self.node_id_to_hir_id.get(idx) {
+            *hir_id
+        } else {
             // Generate a new `HirId`.
             let owner = self.current_hir_id_owner;
             let local_id = self.item_local_id_counter;
             self.item_local_id_counter.increment_by(1);
             self.local_node_ids.push(ast_node_id);
-            hir::HirId { owner, local_id }
-        })
+            let hir_id = hir::HirId { owner, local_id };
+            if idx > self.node_id_to_hir_id.len() {
+                self.node_id_to_hir_id.resize(idx, None);
+            }
+            self.node_id_to_hir_id.insert(idx, Some(hir_id));
+            hir_id
+        }
     }
 
     fn next_id(&mut self) -> hir::HirId {
@@ -574,7 +590,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     fn lower_res(&mut self, res: Res<NodeId>) -> Res {
         res.map_id(|id| {
-            self.node_id_to_hir_id.get(id).copied().flatten().unwrap_or_else(|| {
+            let idx = id.as_usize() - self.current_node_id_owner.as_usize();
+            self.node_id_to_hir_id.get(idx).copied().flatten().unwrap_or_else(|| {
                 panic!("expected `NodeId` to be lowered already for res {:#?}", res);
             })
         })
