@@ -146,12 +146,13 @@ struct LoweringContext<'a, 'hir: 'a> {
     in_scope_lifetimes: Vec<ParamName>,
 
     ///
-    in_scope_generic_params: Vec<(GenericParamKind, ParamName)>,
+    in_scope_generic_params: Vec<(NodeId, GenericParamKind, ParamName)>,
 
     current_hir_id_owner: LocalDefId,
     item_local_id_counter: hir::ItemLocalId,
     local_id_to_def_id: SortedMap<ItemLocalId, LocalDefId>,
     trait_map: FxHashMap<ItemLocalId, Box<[TraitCandidate]>>,
+    remapped_def_id: FxHashMap<DefId, DefId>,
 
     /// NodeIds that are lowered inside the current HIR owner.
     node_id_to_local_id: FxHashMap<NodeId, hir::ItemLocalId>,
@@ -370,6 +371,7 @@ pub fn lower_crate<'a, 'hir>(
         node_id_to_local_id: FxHashMap::default(),
         local_id_to_def_id: SortedMap::new(),
         trait_map: FxHashMap::default(),
+        remapped_def_id: FxHashMap::default(),
         generator_kind: None,
         task_context: None,
         current_item: None,
@@ -526,6 +528,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         def_id
     }
 
+    fn with_fresh_remapped_def_id<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.remapped_def_id.clear();
+        f(self)
+    }
+
     fn make_owner_info(&mut self, node: hir::OwnerNode<'hir>) -> hir::OwnerInfo<'hir> {
         let attrs = std::mem::take(&mut self.attrs);
         let mut bodies = std::mem::take(&mut self.bodies);
@@ -629,6 +636,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     }
 
     fn lower_res(&mut self, res: Res<NodeId>) -> Res {
+        let res = res.map_def_id(|def_id| *self.remapped_def_id.get(&def_id).unwrap_or(&def_id));
+
         let res: Result<Res, ()> = res.apply_id(|id| {
             let owner = self.current_hir_id_owner;
             let local_id = self.node_id_to_local_id.get(&id).copied().ok_or(())?;
@@ -755,6 +764,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Converts a generic type into a new generic parameter.
     fn generic_param_from_name(
         &mut self,
+        orig_node_id: NodeId,
         kind: hir::GenericParamKind<'hir>,
         hir_name: ParamName,
         parent_def_id: LocalDefId,
@@ -771,13 +781,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         };
 
         // Add a definition for the generic param def.
-        self.resolver.create_def(
+        let def_id = self.resolver.create_def(
             parent_def_id,
             node_id,
             DefPathData::TypeNs(str_name),
             ExpnId::root(),
             span.with_parent(None),
         );
+
+        let orig_def_id = self.resolver.local_def_id(orig_node_id);
+        self.remapped_def_id.insert(orig_def_id.to_def_id(), def_id.to_def_id());
 
         hir::GenericParam {
             hir_id: self.lower_node_id(node_id),
@@ -856,7 +869,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     lt_def_names.push(param_name);
                 }
                 GenericParamKind::Type { .. } | GenericParamKind::Const { .. } => {
-                    generic_def_names.push((param.kind.clone(), param_name));
+                    generic_def_names.push((param.id, param.kind.clone(), param_name));
                 }
             }
         }
@@ -1615,79 +1628,85 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             .in_scope_generic_params
             .iter()
             .cloned()
-            .map(|(kind, name)| (kind, name, name.ident().span))
+            .map(|(id, kind, name)| (id, kind, name, name.ident().span))
             .collect();
 
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
-            let hir_bounds = lower_bounds(lctx);
-
-            let mut all_generic_params = Vec::new();
-            for (kind, hir_name, span) in &generic_params {
-                // TODO call lower_generic_param
-                let kind = match kind {
-                    GenericParamKind::Type { ref default, .. } => hir::GenericParamKind::Type {
-                        default: default.as_ref().map(|x| {
-                            lctx.lower_ty(
-                                x,
-                                ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
-                            )
-                        }),
-                        synthetic: false,
-                    },
-                    GenericParamKind::Const { ref ty, kw_span: _, ref default } => {
-                        let ty = lctx.with_anonymous_lifetime_mode(
-                            AnonymousLifetimeMode::ReportError,
-                            |this| {
-                                this.lower_ty(
-                                    &ty,
+            lctx.with_fresh_remapped_def_id(|lctx| {
+                let mut all_generic_params = Vec::new();
+                for (node_id, kind, hir_name, span) in &generic_params {
+                    // TODO call lower_generic_param
+                    let kind = match kind {
+                        GenericParamKind::Type { ref default, .. } => hir::GenericParamKind::Type {
+                            default: default.as_ref().map(|x| {
+                                lctx.lower_ty(
+                                    x,
                                     ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
                                 )
-                            },
-                        );
-                        let default = default.as_ref().map(|def| lctx.lower_anon_const(def));
-                        hir::GenericParamKind::Const { ty, default }
+                            }),
+                            synthetic: false,
+                        },
+                        GenericParamKind::Const { ref ty, kw_span: _, ref default } => {
+                            let ty = lctx.with_anonymous_lifetime_mode(
+                                AnonymousLifetimeMode::ReportError,
+                                |this| {
+                                    this.lower_ty(
+                                        &ty,
+                                        ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
+                                    )
+                                },
+                            );
+                            let default = default.as_ref().map(|def| lctx.lower_anon_const(def));
+                            hir::GenericParamKind::Const { ty, default }
+                        }
+                        GenericParamKind::Lifetime => {
+                            panic!();
+                        }
+                    };
+
+                    all_generic_params.push(lctx.generic_param_from_name(
+                        *node_id,
+                        kind,
+                        *hir_name,
+                        opaque_ty_def_id,
+                        *span,
+                    ));
+                }
+
+                let hir_bounds = lower_bounds(lctx);
+
+                for hir_bound in hir_bounds {
+                    if let hir::GenericBound::Outlives(l) = hir_bound {
+                        let name = match l.name {
+                            hir::LifetimeName::Underscore => hir::ParamName::Plain(
+                                Ident::with_dummy_span(kw::UnderscoreLifetime),
+                            ),
+                            hir::LifetimeName::Param(param_name) => param_name,
+                            _ => panic!("expected `LifetimeName::Param` or `ParamName::Plain`"),
+                        };
+                        all_generic_params.push(lctx.lifetime_to_generic_param(
+                            l.span,
+                            name,
+                            opaque_ty_def_id,
+                        ))
                     }
-                    GenericParamKind::Lifetime => {
-                        panic!();
-                    }
+                }
+
+                let opaque_ty_item = hir::OpaqueTy {
+                    generics: hir::Generics {
+                        params: lctx.arena.alloc_from_iter(all_generic_params),
+                        where_clause: hir::WhereClause {
+                            predicates: &[],
+                            span: lctx.lower_span(span),
+                        },
+                        span: lctx.lower_span(span),
+                    },
+                    bounds: hir_bounds,
+                    origin,
                 };
 
-                all_generic_params.push(lctx.generic_param_from_name(
-                    kind,
-                    *hir_name,
-                    opaque_ty_def_id,
-                    *span,
-                ));
-            }
-
-            for hir_bound in hir_bounds {
-                if let hir::GenericBound::Outlives(l) = hir_bound {
-                    let name = match l.name {
-                        hir::LifetimeName::Underscore => {
-                            hir::ParamName::Plain(Ident::with_dummy_span(kw::UnderscoreLifetime))
-                        }
-                        hir::LifetimeName::Param(param_name) => param_name,
-                        _ => panic!("expected `LifetimeName::Param` or `ParamName::Plain`"),
-                    };
-                    all_generic_params.push(lctx.lifetime_to_generic_param(
-                        l.span,
-                        name,
-                        opaque_ty_def_id,
-                    ))
-                }
-            }
-
-            let opaque_ty_item = hir::OpaqueTy {
-                generics: hir::Generics {
-                    params: lctx.arena.alloc_from_iter(all_generic_params),
-                    where_clause: hir::WhereClause { predicates: &[], span: lctx.lower_span(span) },
-                    span: lctx.lower_span(span),
-                },
-                bounds: hir_bounds,
-                origin,
-            };
-
-            lctx.generate_opaque_type(opaque_ty_def_id, opaque_ty_item, span, opaque_ty_span)
+                lctx.generate_opaque_type(opaque_ty_def_id, opaque_ty_item, span, opaque_ty_span)
+            })
         });
 
         // `impl Trait` now just becomes `Foo<'a, 'b, ..>`.
