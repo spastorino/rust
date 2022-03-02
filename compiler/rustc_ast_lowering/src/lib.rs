@@ -1709,8 +1709,61 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             })
         });
 
+        let mut all_generic_params = Vec::new();
+        for (node_id, kind, _hir_name, span) in &generic_params {
+            let generic_arg = match kind {
+                GenericParamKind::Type { .. } => hir::GenericArg::Type(hir::Ty {
+                    hir_id: self.next_id(),
+                    span: *span,
+                    kind: hir::TyKind::Path(hir::QPath::Resolved(
+                        None,
+                        self.arena.alloc(hir::Path {
+                            res: Res::Def(
+                                DefKind::TyParam,
+                                self.resolver.local_def_id(*node_id).to_def_id(),
+                            ),
+                            span: *span,
+                            segments: &[],
+                        }),
+                    )),
+                }),
+                GenericParamKind::Const { .. } => hir::GenericArg::Const(hir::ConstArg {
+                    value: hir::AnonConst {
+                        hir_id: self.next_id(),
+                        body: self.lower_body(|this| {
+                            (
+                                &[],
+                                hir::Expr {
+                                    hir_id: this.next_id(),
+                                    kind: hir::ExprKind::Path(hir::QPath::Resolved(
+                                        None,
+                                        this.arena.alloc(hir::Path {
+                                            res: Res::Def(
+                                                DefKind::Const,
+                                                this.resolver.local_def_id(*node_id).to_def_id(),
+                                            ),
+                                            span: *span,
+                                            segments: &[],
+                                        }),
+                                    )),
+                                    span: *span,
+                                },
+                            )
+                        }),
+                    },
+                    span: *span,
+                }),
+                _ => {
+                    panic!();
+                }
+            };
+
+            all_generic_params.push(generic_arg);
+        }
+
         // `impl Trait` now just becomes `Foo<'a, 'b, ..>`.
-        hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, &[])
+        let all_generic_params = self.arena.alloc_from_iter(all_generic_params);
+        hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, all_generic_params)
     }
 
     /// Registers a new opaque type with the proper `NodeId`s and
