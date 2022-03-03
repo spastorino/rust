@@ -146,7 +146,7 @@ struct LoweringContext<'a, 'hir: 'a> {
     in_scope_lifetimes: Vec<ParamName>,
 
     ///
-    in_scope_generic_params: Vec<(NodeId, GenericParamKind, ParamName)>,
+    in_scope_generic_params: Vec<(ParamName, GenericParam)>,
 
     current_hir_id_owner: LocalDefId,
     item_local_id_counter: hir::ItemLocalId,
@@ -764,7 +764,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Converts a generic type into a new generic parameter.
     fn generic_param_from_name(
         &mut self,
-        orig_node_id: NodeId,
+        param: &GenericParam,
         kind: hir::GenericParamKind<'hir>,
         hir_name: ParamName,
         parent_def_id: LocalDefId,
@@ -789,13 +789,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             span.with_parent(None),
         );
 
-        let orig_def_id = self.resolver.local_def_id(orig_node_id);
+        let orig_def_id = self.resolver.local_def_id(param.id);
         self.remapped_def_id.insert(orig_def_id.to_def_id(), def_id.to_def_id());
 
         hir::GenericParam {
             hir_id: self.lower_node_id(node_id),
             name: hir_name,
-            bounds: &[],
+            bounds: self.lower_param_bounds(
+                &param.bounds,
+                ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
+            ),
             span: self.lower_span(span),
             pure_wrt_drop: false,
             kind,
@@ -869,7 +872,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     lt_def_names.push(param_name);
                 }
                 GenericParamKind::Type { .. } | GenericParamKind::Const { .. } => {
-                    generic_def_names.push((param.id, param.kind.clone(), param_name));
+                    generic_def_names.push((param_name, param.clone()));
                 }
             }
         }
@@ -1628,15 +1631,15 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             .in_scope_generic_params
             .iter()
             .cloned()
-            .map(|(id, kind, name)| (id, kind, name, name.ident().span))
+            .map(|(name, param)| (name, name.ident().span, param))
             .collect();
 
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
             lctx.with_fresh_remapped_def_id(|lctx| {
                 let mut all_generic_params = Vec::new();
-                for (node_id, kind, hir_name, span) in &generic_params {
+                for (name, span, param) in &generic_params {
                     // TODO call lower_generic_param
-                    let kind = match kind {
+                    let kind = match param.kind {
                         GenericParamKind::Type { ref default, .. } => hir::GenericParamKind::Type {
                             default: default.as_ref().map(|x| {
                                 lctx.lower_ty(
@@ -1665,9 +1668,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     };
 
                     all_generic_params.push(lctx.generic_param_from_name(
-                        *node_id,
+                        param,
                         kind,
-                        *hir_name,
+                        *name,
                         opaque_ty_def_id,
                         *span,
                     ));
@@ -1710,8 +1713,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         });
 
         let mut all_generic_params = Vec::new();
-        for (node_id, kind, _hir_name, span) in &generic_params {
-            let generic_arg = match kind {
+        for (_name, span, param) in &generic_params {
+            let generic_arg = match param.kind {
                 GenericParamKind::Type { .. } => hir::GenericArg::Type(hir::Ty {
                     hir_id: self.next_id(),
                     span: *span,
@@ -1720,7 +1723,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         self.arena.alloc(hir::Path {
                             res: Res::Def(
                                 DefKind::TyParam,
-                                self.resolver.local_def_id(*node_id).to_def_id(),
+                                self.resolver.local_def_id(param.id).to_def_id(),
                             ),
                             span: *span,
                             segments: &[],
@@ -1740,7 +1743,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                         this.arena.alloc(hir::Path {
                                             res: Res::Def(
                                                 DefKind::Const,
-                                                this.resolver.local_def_id(*node_id).to_def_id(),
+                                                this.resolver.local_def_id(param.id).to_def_id(),
                                             ),
                                             span: *span,
                                             segments: &[],
