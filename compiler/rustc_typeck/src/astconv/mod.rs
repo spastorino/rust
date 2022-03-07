@@ -23,7 +23,7 @@ use rustc_hir::def::{CtorOf, DefKind, Namespace, Res};
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::intravisit::{walk_generics, Visitor as _};
 use rustc_hir::lang_items::LangItem;
-use rustc_hir::{GenericArg, GenericArgs};
+use rustc_hir::{GenericArg, GenericArgs, OpaqueTyOrigin};
 use rustc_middle::ty::subst::{self, GenericArgKind, InternalSubsts, Subst, SubstsRef};
 use rustc_middle::ty::GenericParamDefKind;
 use rustc_middle::ty::{self, Const, DefIdTree, Ty, TyCtxt, TypeFoldable};
@@ -2410,16 +2410,9 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 let def_id = item_id.def_id.to_def_id();
 
                 match opaque_ty.kind {
-                    hir::ItemKind::OpaqueTy(hir::OpaqueTy { origin, .. }) => self
-                        .impl_trait_ty_to_ty(
-                            def_id,
-                            lifetimes,
-                            matches!(
-                                origin,
-                                hir::OpaqueTyOrigin::FnReturn(..)
-                                    | hir::OpaqueTyOrigin::AsyncFn(..)
-                            ),
-                        ),
+                    hir::ItemKind::OpaqueTy(hir::OpaqueTy { origin, .. }) => {
+                        self.impl_trait_ty_to_ty(def_id, lifetimes, origin)
+                    }
                     ref i => bug!("`impl Trait` pointed to non-opaque type?? {:#?}", i),
                 }
             }
@@ -2485,31 +2478,36 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         &self,
         def_id: DefId,
         generic_args: &[hir::GenericArg<'_>],
-        replace_parent_lifetimes: bool,
+        origin: OpaqueTyOrigin,
     ) -> Ty<'tcx> {
         debug!("impl_trait_ty_to_ty(def_id={:?}, generic_args={:?})", def_id, generic_args);
         let tcx = self.tcx();
 
-        if tcx.sess.features_untracked().return_position_impl_trait_v2 {
-            let substs: Vec<_> = generic_args
-                .iter()
-                .map(|generic_arg| match generic_arg {
-                    GenericArg::Lifetime(lt) => self.ast_region_to_region(lt, None).into(),
-                    GenericArg::Type(ty) => self.ast_ty_to_ty(ty).into(),
-                    GenericArg::Const(ct) => ty::Const::from_opt_const_arg_anon_const(
-                        tcx,
-                        ty::WithOptConstParam {
-                            did: tcx.hir().local_def_id(ct.value.hir_id),
-                            const_param_did: Some(def_id),
-                        },
-                    )
-                    .into(),
-                    _ => bug!("impossible"),
-                })
-                .collect();
-            let ty = tcx.mk_opaque(def_id, tcx.intern_substs(&substs));
-            debug!("HERE: impl_trait_ty_to_ty: {}", ty);
-            return ty;
+        match origin {
+            hir::OpaqueTyOrigin::FnReturn(..)
+                if tcx.sess.features_untracked().return_position_impl_trait_v2 =>
+            {
+                let substs: Vec<_> = generic_args
+                    .iter()
+                    .map(|generic_arg| match generic_arg {
+                        GenericArg::Lifetime(lt) => self.ast_region_to_region(lt, None).into(),
+                        GenericArg::Type(ty) => self.ast_ty_to_ty(ty).into(),
+                        GenericArg::Const(ct) => ty::Const::from_opt_const_arg_anon_const(
+                            tcx,
+                            ty::WithOptConstParam {
+                                did: tcx.hir().local_def_id(ct.value.hir_id),
+                                const_param_did: Some(def_id),
+                            },
+                        )
+                        .into(),
+                        _ => bug!("impossible"),
+                    })
+                    .collect();
+                let ty = tcx.mk_opaque(def_id, tcx.intern_substs(&substs));
+                debug!("HERE: impl_trait_ty_to_ty: {}", ty);
+                return ty;
+            }
+            _ => {}
         }
 
         let generics = tcx.generics_of(def_id);
@@ -2537,7 +2535,12 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                     // For `impl Trait` in the types of statics, constants,
                     // locals and type aliases. These capture all parent
                     // lifetimes, so they can use their identity subst.
-                    GenericParamDefKind::Lifetime if replace_parent_lifetimes => {
+                    GenericParamDefKind::Lifetime
+                        if matches!(
+                            origin,
+                            hir::OpaqueTyOrigin::FnReturn(..) | hir::OpaqueTyOrigin::AsyncFn(..)
+                        ) =>
+                    {
                         tcx.lifetimes.re_static.into()
                     }
                     _ => tcx.mk_param_from_def(param),

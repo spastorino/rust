@@ -1587,15 +1587,16 @@ fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::Generics {
         }
         Node::Item(item) => match item.kind {
             ItemKind::OpaqueTy(hir::OpaqueTy {
-                origin:
-                    hir::OpaqueTyOrigin::FnReturn(fn_def_id) | hir::OpaqueTyOrigin::AsyncFn(fn_def_id),
+                origin: hir::OpaqueTyOrigin::FnReturn(fn_def_id),
                 ..
             }) if !tcx.sess.features_untracked().return_position_impl_trait_v2 => {
                 Some(fn_def_id.to_def_id())
             }
-            ItemKind::OpaqueTy(hir::OpaqueTy { origin: hir::OpaqueTyOrigin::TyAlias, .. })
-                if !tcx.sess.features_untracked().return_position_impl_trait_v2 =>
-            {
+            ItemKind::OpaqueTy(hir::OpaqueTy {
+                origin: hir::OpaqueTyOrigin::AsyncFn(fn_def_id),
+                ..
+            }) => Some(fn_def_id.to_def_id()),
+            ItemKind::OpaqueTy(hir::OpaqueTy { origin: hir::OpaqueTyOrigin::TyAlias, .. }) => {
                 let parent_id = tcx.hir().get_parent_item(hir_id);
                 assert_ne!(parent_id, CRATE_DEF_ID);
                 debug!("generics_of: parent of opaque ty {:?} is {:?}", def_id, parent_id);

@@ -529,8 +529,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     }
 
     fn with_fresh_remapped_def_id<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
-        self.remapped_def_id.clear();
-        f(self)
+        let current_remapped_def_id = std::mem::take(&mut self.remapped_def_id);
+        let result = f(self);
+        self.remapped_def_id = current_remapped_def_id;
+        result
     }
 
     fn make_owner_info(&mut self, node: hir::OwnerNode<'hir>) -> hir::OwnerInfo<'hir> {
@@ -1714,6 +1716,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         let mut all_generic_params = Vec::new();
         for (_name, span, param) in &generic_params {
+            let def_id = self.resolver.local_def_id(param.id).to_def_id();
             let generic_arg = match param.kind {
                 GenericParamKind::Type { .. } => hir::GenericArg::Type(hir::Ty {
                     hir_id: self.next_id(),
@@ -1723,7 +1726,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         self.arena.alloc(hir::Path {
                             res: Res::Def(
                                 DefKind::TyParam,
-                                self.resolver.local_def_id(param.id).to_def_id(),
+                                *self.remapped_def_id.get(&def_id).unwrap_or(&def_id),
                             ),
                             span: *span,
                             segments: &[],
@@ -1743,7 +1746,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                         this.arena.alloc(hir::Path {
                                             res: Res::Def(
                                                 DefKind::Const,
-                                                this.resolver.local_def_id(param.id).to_def_id(),
+                                                *this
+                                                    .remapped_def_id
+                                                    .get(&def_id)
+                                                    .unwrap_or(&def_id),
                                             ),
                                             span: *span,
                                             segments: &[],
