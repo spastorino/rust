@@ -276,6 +276,11 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         debug!(?concrete_ty);
 
         let first_own_region = match opaque_defn.origin {
+            hir::OpaqueTyOrigin::FnReturn(..)
+                if tcx.sess.features_untracked().return_position_impl_trait_v2 =>
+            {
+                0
+            }
             hir::OpaqueTyOrigin::FnReturn(..) | hir::OpaqueTyOrigin::AsyncFn(..) => {
                 // We lower
                 //
