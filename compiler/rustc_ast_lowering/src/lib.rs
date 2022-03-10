@@ -37,6 +37,9 @@
 #![recursion_limit = "256"]
 #![allow(rustc::potential_query_instability)]
 
+#[macro_use]
+extern crate tracing;
+
 use rustc_ast::token::{self, Token};
 use rustc_ast::tokenstream::{CanSynthesizeMissingTokens, TokenStream, TokenTree};
 use rustc_ast::visit;
@@ -68,7 +71,6 @@ use rustc_span::{Span, DUMMY_SP};
 
 use smallvec::SmallVec;
 use std::collections::hash_map::Entry;
-use tracing::{debug, trace};
 
 macro_rules! arena_vec {
     ($this:expr; $($x:expr),*) => (
@@ -386,7 +388,7 @@ pub fn lower_crate<'a, 'hir>(
     .lower_crate(krate)
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 enum ParamMode {
     /// Any path in a type context.
     Explicit,
@@ -452,6 +454,7 @@ enum AnonymousLifetimeMode {
 }
 
 impl<'a, 'hir> LoweringContext<'a, 'hir> {
+    #[instrument(level = "debug", skip(self, c))]
     fn lower_crate(mut self, c: &Crate) -> &'hir hir::Crate<'hir> {
         debug_assert_eq!(self.resolver.local_def_id(CRATE_NODE_ID), CRATE_DEF_ID);
 
@@ -490,6 +493,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         stable_hasher.finish()
     }
 
+    #[instrument(level = "debug", skip(self, f))]
     fn with_hir_id_owner(
         &mut self,
         owner: NodeId,
@@ -528,6 +532,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         def_id
     }
 
+    #[instrument(level = "debug", skip(self, f))]
     fn with_fresh_remapped_def_id<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         let current_remapped_def_id = std::mem::take(&mut self.remapped_def_id);
         let result = f(self);
@@ -637,14 +642,17 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.lower_node_id(node_id)
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn lower_res(&mut self, res: Res<NodeId>) -> Res {
         let res = res.map_def_id(|def_id| *self.remapped_def_id.get(&def_id).unwrap_or(&def_id));
+        trace!(?res, "from remapping");
 
         let res: Result<Res, ()> = res.apply_id(|id| {
             let owner = self.current_hir_id_owner;
             let local_id = self.node_id_to_local_id.get(&id).copied().ok_or(())?;
             Ok(hir::HirId { owner, local_id })
         });
+        trace!(?res);
         // We may fail to find a HirId when the Res points to a Local from an enclosing HIR owner.
         // This can happen when trying to lower the return type `x` in erroneous code like
         //   async fn foo(x: u8) -> x {}
@@ -686,23 +694,17 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         )
     }
 
+    #[instrument(level = "debug", skip(self, op))]
     fn with_anonymous_lifetime_mode<R>(
         &mut self,
         anonymous_lifetime_mode: AnonymousLifetimeMode,
         op: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        debug!(
-            "with_anonymous_lifetime_mode(anonymous_lifetime_mode={:?})",
-            anonymous_lifetime_mode,
-        );
         let old_anonymous_lifetime_mode = self.anonymous_lifetime_mode;
         self.anonymous_lifetime_mode = anonymous_lifetime_mode;
         let result = op(self);
         self.anonymous_lifetime_mode = old_anonymous_lifetime_mode;
-        debug!(
-            "with_anonymous_lifetime_mode: restoring anonymous_lifetime_mode={:?}",
-            old_anonymous_lifetime_mode
-        );
+        debug!(?old_anonymous_lifetime_mode, "restoring");
         result
     }
 
@@ -764,6 +766,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     }
 
     /// Converts a generic type into a new generic parameter.
+    #[instrument(level = "debug", skip(self))]
     fn generic_param_from_name(
         &mut self,
         param: &GenericParam,
@@ -793,6 +796,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         let orig_def_id = self.resolver.local_def_id(param.id);
         self.remapped_def_id.insert(orig_def_id.to_def_id(), def_id.to_def_id());
+        trace!(?orig_def_id, ?def_id, "recording remapping");
 
         hir::GenericParam {
             hir_id: self.lower_node_id(node_id),
@@ -832,6 +836,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     // This is used to track which lifetimes have already been defined, and
     // which are new in-band lifetimes that need to have a definition created
     // for them.
+    #[instrument(level = "debug", skip(self, f))]
     fn with_in_scope_lifetime_defs<T>(
         &mut self,
         params: &[GenericParam],
@@ -856,6 +861,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     // This is used to track which lifetimes have already been defined, and
     // which are new in-band lifetimes that need to have a definition created
     // for them.
+    #[instrument(level = "debug", skip(self, f))]
     fn with_in_scope_generic_defs<T>(
         &mut self,
         params: &[GenericParam],
@@ -894,6 +900,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Presuming that in-band lifetimes are enabled, then
     /// `self.anonymous_lifetime_mode` will be updated to match the
     /// parameter while `f` is running (and restored afterwards).
+    #[instrument(level = "debug", skip(self, f))]
     fn add_in_band_defs<T>(
         &mut self,
         generics: &Generics,
@@ -1092,13 +1099,12 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// ```
     ///
     /// returns a `hir::TypeBinding` representing `Item`.
+    #[instrument(level = "debug", skip(self))]
     fn lower_assoc_ty_constraint(
         &mut self,
         constraint: &AssocConstraint,
         mut itctx: ImplTraitContext<'_, 'hir>,
     ) -> hir::TypeBinding<'hir> {
-        debug!("lower_assoc_ty_constraint(constraint={:?}, itctx={:?})", constraint, itctx);
-
         // lower generic arguments of identifier in constraint
         let gen_args = if let Some(ref gen_args) = constraint.gen_args {
             let gen_args_ctor = match gen_args {
@@ -1237,6 +1243,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         }
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn lower_generic_arg(
         &mut self,
         arg: &ast::GenericArg,
@@ -1307,6 +1314,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         }
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn lower_ty(&mut self, t: &Ty, itctx: ImplTraitContext<'_, 'hir>) -> &'hir hir::Ty<'hir> {
         self.arena.alloc(self.lower_ty_direct(t, itctx))
     }
@@ -1606,6 +1614,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, lifetimes)
     }
 
+    #[instrument(level = "debug", skip(self, lower_bounds))]
     fn lower_opaque_impl_trait_v2(
         &mut self,
         span: Span,
@@ -1614,11 +1623,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         opaque_ty_node_id: NodeId,
         lower_bounds: impl FnOnce(&mut Self) -> hir::GenericBounds<'hir>,
     ) -> hir::TyKind<'hir> {
-        debug!(
-            "lower_opaque_impl_trait_v2(fn_def_id={:?}, opaque_ty_node_id={:?}, span={:?})",
-            fn_def_id, opaque_ty_node_id, span,
-        );
-
         // Make sure we know that some funky desugaring has been going on here.
         // This is a first: there is code in other places like for loop
         // desugaring that explicitly states that we don't want to track that.
@@ -2191,6 +2195,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         )
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn lower_param_bound(
         &mut self,
         tpb: &GenericBound,
@@ -2257,6 +2262,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.arena.alloc_from_iter(self.lower_generic_params_mut(params, itctx))
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn lower_generic_param(
         &mut self,
         param: &GenericParam,

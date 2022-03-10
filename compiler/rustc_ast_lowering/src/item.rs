@@ -16,7 +16,6 @@ use rustc_span::symbol::{kw, sym, Ident};
 use rustc_span::Span;
 use rustc_target::spec::abi;
 use smallvec::{smallvec, SmallVec};
-use tracing::debug;
 
 use std::iter;
 use std::mem;
@@ -119,7 +118,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
     // This should only be used with generics that have already had their
     // in-band lifetimes added. In practice, this means that this function is
     // only used when lowering a child item of a trait or impl.
-    #[tracing::instrument(level = "debug", skip(self, f))]
+    #[instrument(level = "debug", skip(self, f))]
     fn with_parent_item_lifetime_defs<T>(
         &mut self,
         parent_hir_id: LocalDefId,
@@ -151,7 +150,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
     // Clears (and restores) the `in_scope_lifetimes` field. Used when
     // visiting nested items, which never inherit in-scope lifetimes
     // from their surrounding environment.
-    #[tracing::instrument(level = "debug", skip(self, f))]
+    #[instrument(level = "debug", skip(self, f))]
     fn without_in_scope_lifetime_defs<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
         let old_in_scope_lifetimes = mem::replace(&mut self.in_scope_lifetimes, vec![]);
         debug!(?old_in_scope_lifetimes);
@@ -208,6 +207,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         }
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn lower_item(&mut self, i: &Item) -> &'hir hir::Item<'hir> {
         let mut ident = i.ident;
         let mut vis = self.lower_visibility(&i.vis);
@@ -502,6 +502,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         (ty, self.lower_const_body(span, body))
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn lower_use_tree(
         &mut self,
         tree: &UseTree,
@@ -511,9 +512,6 @@ impl<'hir> LoweringContext<'_, 'hir> {
         ident: &mut Ident,
         attrs: Option<&'hir [Attribute]>,
     ) -> hir::ItemKind<'hir> {
-        debug!("lower_use_tree(tree={:?})", tree);
-        debug!("lower_use_tree: vis = {:?}", vis);
-
         let path = &tree.prefix;
         let segments = prefix.segments.iter().chain(path.segments.iter()).cloned().collect();
 
@@ -693,8 +691,8 @@ impl<'hir> LoweringContext<'_, 'hir> {
     /// Paths like the visibility path in `pub(super) use foo::{bar, baz}` are repeated
     /// many times in the HIR tree; for each occurrence, we need to assign distinct
     /// `NodeId`s. (See, e.g., #56128.)
+    #[instrument(level = "debug", skip(self))]
     fn rebuild_use_path(&mut self, path: &hir::Path<'hir>) -> &'hir hir::Path<'hir> {
-        debug!("rebuild_use_path(path = {:?})", path);
         let segments =
             self.arena.alloc_from_iter(path.segments.iter().map(|seg| hir::PathSegment {
                 ident: seg.ident,
