@@ -1477,7 +1477,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         generics_ctor.into_generics(self.arena)
     }
 
-    fn lower_where_clause(&mut self, wc: &WhereClause) -> hir::WhereClause<'hir> {
+    pub(super) fn lower_where_clause(&mut self, wc: &WhereClause) -> hir::WhereClause<'hir> {
         self.with_anonymous_lifetime_mode(AnonymousLifetimeMode::ReportError, |this| {
             hir::WhereClause {
                 predicates: this.arena.alloc_from_iter(
@@ -1543,7 +1543,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 /// Helper struct for delayed construction of Generics.
 pub(super) struct GenericsCtor<'hir> {
     pub(super) params: SmallVec<[hir::GenericParam<'hir>; 4]>,
-    where_clause: hir::WhereClause<'hir>,
+    pub(super) where_clause: hir::WhereClause<'hir>,
     span: Span,
 }
 

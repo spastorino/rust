@@ -147,8 +147,13 @@ struct LoweringContext<'a, 'hir: 'a> {
     /// vector.
     in_scope_lifetimes: Vec<ParamName>,
 
+    check_in_scope_lifetime_bounds: bool,
+    in_scope_lifetime_bounds: Vec<Ident>,
+
     ///
     in_scope_generic_params: Vec<(ParamName, GenericParam)>,
+
+    in_scope_where_clause: Option<WhereClause>,
 
     current_hir_id_owner: LocalDefId,
     item_local_id_counter: hir::ItemLocalId,
@@ -380,7 +385,10 @@ pub fn lower_crate<'a, 'hir>(
         lifetimes_to_define: Vec::new(),
         is_collecting_anonymous_lifetimes: None,
         in_scope_lifetimes: Vec::new(),
+        check_in_scope_lifetime_bounds: false,
+        in_scope_lifetime_bounds: Vec::new(),
         in_scope_generic_params: Vec::new(),
+        in_scope_where_clause: None,
         allow_try_trait: Some([sym::try_trait_v2][..].into()),
         allow_gen_future: Some([sym::gen_future][..].into()),
         allow_into_future: Some([sym::into_future][..].into()),
@@ -537,6 +545,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let current_remapped_def_id = std::mem::take(&mut self.remapped_def_id);
         let result = f(self);
         self.remapped_def_id = current_remapped_def_id;
+        result
+    }
+
+    #[instrument(level = "debug", skip(self, f))]
+    fn with_in_scope_lifetime_bounds<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.check_in_scope_lifetime_bounds = true;
+        let current_lifetime_bounds = std::mem::take(&mut self.in_scope_lifetime_bounds);
+        let result = f(self);
+        self.in_scope_lifetime_bounds = current_lifetime_bounds;
+        self.check_in_scope_lifetime_bounds = false;
         result
     }
 
@@ -923,15 +941,18 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         // `lifetimes_to_define`. If we swapped the order of these two,
                         // in-band-lifetimes introduced by generics or where-clauses
                         // wouldn't have been added yet.
-                        let generics = this.lower_generics_mut(
+                        let hir_generics = this.lower_generics_mut(
                             generics,
                             ImplTraitContext::Universal(
                                 &mut impl_trait_defs,
                                 this.current_hir_id_owner,
                             ),
                         );
+                        let current_where_clause = std::mem::take(&mut this.in_scope_where_clause);
+                        this.in_scope_where_clause = Some(generics.where_clause.clone());
                         let res = f(this, &mut impl_trait_defs);
-                        (generics, impl_trait_defs, res)
+                        this.in_scope_where_clause = current_where_clause;
+                        (hir_generics, impl_trait_defs, res)
                     })
                 })
             });
@@ -1684,37 +1705,48 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                 let hir_bounds = lower_bounds(lctx);
 
-                for hir_bound in hir_bounds {
-                    if let hir::GenericBound::Outlives(l) = hir_bound {
-                        let name = match l.name {
-                            hir::LifetimeName::Underscore => hir::ParamName::Plain(
-                                Ident::with_dummy_span(kw::UnderscoreLifetime),
-                            ),
-                            hir::LifetimeName::Param(param_name) => param_name,
-                            _ => panic!("expected `LifetimeName::Param` or `ParamName::Plain`"),
-                        };
-                        all_generic_params.push(lctx.lifetime_to_generic_param(
-                            l.span,
-                            name,
-                            opaque_ty_def_id,
-                        ))
+                lctx.with_in_scope_lifetime_bounds(|lctx| {
+                    for hir_bound in hir_bounds {
+                        if let hir::GenericBound::Outlives(l) = hir_bound {
+                            let name = match l.name {
+                                hir::LifetimeName::Underscore => hir::ParamName::Plain(
+                                    Ident::with_dummy_span(kw::UnderscoreLifetime),
+                                ),
+                                hir::LifetimeName::Param(param_name) => {
+                                    if let ParamName::Plain(ident) = param_name {
+                                        lctx.in_scope_lifetime_bounds.push(ident);
+                                    }
+                                    param_name
+                                }
+                                _ => panic!("expected `LifetimeName::Param` or `ParamName::Plain`"),
+                            };
+                            all_generic_params.push(lctx.lifetime_to_generic_param(
+                                l.span,
+                                name,
+                                opaque_ty_def_id,
+                            ))
+                        }
                     }
-                }
 
-                let opaque_ty_item = hir::OpaqueTy {
-                    generics: hir::Generics {
-                        params: lctx.arena.alloc_from_iter(all_generic_params),
-                        where_clause: hir::WhereClause {
-                            predicates: &[],
+                    let where_clause = lctx.in_scope_where_clause.as_ref().unwrap().clone();
+                    let where_clause = lctx.lower_where_clause(&where_clause);
+                    let opaque_ty_item = hir::OpaqueTy {
+                        generics: hir::Generics {
+                            params: lctx.arena.alloc_from_iter(all_generic_params),
+                            where_clause: where_clause,
                             span: lctx.lower_span(span),
                         },
-                        span: lctx.lower_span(span),
-                    },
-                    bounds: hir_bounds,
-                    origin,
-                };
+                        bounds: hir_bounds,
+                        origin,
+                    };
 
-                lctx.generate_opaque_type(opaque_ty_def_id, opaque_ty_item, span, opaque_ty_span)
+                    lctx.generate_opaque_type(
+                        opaque_ty_def_id,
+                        opaque_ty_item,
+                        span,
+                        opaque_ty_span,
+                    )
+                })
             })
         });
 
@@ -2231,8 +2263,18 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 AnonymousLifetimeMode::ReportError => self.new_error_lifetime(Some(l.id), span),
             },
             ident => {
-                let param_name = ParamName::Plain(self.lower_ident(ident));
-                self.new_named_lifetime(l.id, span, hir::LifetimeName::Param(param_name))
+                if self.check_in_scope_lifetime_bounds
+                    && self
+                        .in_scope_lifetime_bounds
+                        .iter()
+                        .find(|&lifetime| *lifetime == ident)
+                        .is_none()
+                {
+                    self.new_named_lifetime(l.id, span, hir::LifetimeName::Static)
+                } else {
+                    let param_name = ParamName::Plain(self.lower_ident(ident));
+                    self.new_named_lifetime(l.id, span, hir::LifetimeName::Param(param_name))
+                }
             }
         }
     }
