@@ -1,4 +1,4 @@
-// run-pass
+// check-pass
 
 #![feature(return_position_impl_trait_v2)]
 
@@ -11,9 +11,9 @@ pub trait FakeFuture {
     type Output;
 }
 
-pub fn future_from_generator<
-    T: FakeGenerator<Yield = ()>
->(x: T) -> impl FakeFuture<Output = T::Return> {
+pub fn future_from_generator<T: FakeGenerator<Yield = ()>>(
+    x: T,
+) -> impl FakeFuture<Output = T::Return> {
     GenFuture(x)
 }
 
