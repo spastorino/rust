@@ -1666,33 +1666,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 let mut all_generic_params = Vec::new();
                 for (name, span, param) in &generic_params {
                     // TODO call lower_generic_param
-                    let kind = match param.kind {
-                        GenericParamKind::Type { ref default, .. } => hir::GenericParamKind::Type {
-                            default: default.as_ref().map(|x| {
-                                lctx.lower_ty(
-                                    x,
-                                    ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
-                                )
-                            }),
-                            synthetic: false,
-                        },
-                        GenericParamKind::Const { ref ty, kw_span: _, ref default } => {
-                            let ty = lctx.with_anonymous_lifetime_mode(
-                                AnonymousLifetimeMode::ReportError,
-                                |this| {
-                                    this.lower_ty(
-                                        &ty,
-                                        ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
-                                    )
-                                },
-                            );
-                            let default = default.as_ref().map(|def| lctx.lower_anon_const(def));
-                            hir::GenericParamKind::Const { ty, default }
-                        }
-                        GenericParamKind::Lifetime => {
-                            panic!();
-                        }
-                    };
+                    let (_, kind) = lctx.lower_generic_param_kind(param);
 
                     all_generic_params.push(lctx.generic_param_from_name(
                         param,
