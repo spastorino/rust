@@ -2317,11 +2317,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         let (name, kind) = self.lower_generic_param_kind(param);
 
-        let name = match name {
-            hir::ParamName::Plain(ident) => hir::ParamName::Plain(self.lower_ident(ident)),
-            name => name,
-        };
-
         let hir_id = self.lower_node_id(param.id);
         self.lower_attrs(hir_id, &param.attrs);
         hir::GenericParam {
@@ -2351,7 +2346,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     hir::LifetimeName::Param(param_name) => param_name,
                     hir::LifetimeName::Implicit(_)
                     | hir::LifetimeName::Underscore
-                    | hir::LifetimeName::Static => hir::ParamName::Plain(lt.name.ident()),
+                    | hir::LifetimeName::Static => {
+                        hir::ParamName::Plain(self.lower_ident(lt.name.ident()))
+                    }
                     hir::LifetimeName::ImplicitObjectLifetimeDefault => {
                         self.sess.diagnostic().span_bug(
                             param.ident.span,
