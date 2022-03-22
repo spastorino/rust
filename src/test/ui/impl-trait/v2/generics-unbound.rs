@@ -2,16 +2,20 @@
 
 #![feature(return_position_impl_trait_v2)]
 
-trait MyTrait {}
+trait MyTrait<T> {
+    fn get_inner(self) -> T;
+}
 
-impl<T> MyTrait for T {}
+impl<T> MyTrait<T> for T {
+    fn get_inner(self) -> Self {
+        self
+    }
+}
 
-fn parser<T>(t: T) -> impl MyTrait {
+fn ident_as_my_trait<T>(t: T) -> impl MyTrait<T> {
     t
 }
 
-fn consume_parser<T: MyTrait>(_t: T) {}
-
 fn main() {
-    consume_parser(parser(22));
+    assert_eq!(22, ident_as_my_trait(22).get_inner());
 }
