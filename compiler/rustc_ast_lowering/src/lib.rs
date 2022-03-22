@@ -1664,16 +1664,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
             lctx.with_fresh_remapped_def_id(|lctx| {
                 let mut all_generic_params = Vec::new();
-                for (name, span, param) in &generic_params {
+                for (_, _, param) in &generic_params {
                     // TODO call lower_generic_param
-                    let (_, kind) = lctx.lower_generic_param_kind(param);
+                    let (name, kind) = lctx.lower_generic_param_kind(param);
 
                     all_generic_params.push(lctx.generic_param_from_name(
                         param,
                         kind,
-                        *name,
+                        name,
                         opaque_ty_def_id,
-                        *span,
+                        param.span(),
                     ));
                 }
 
