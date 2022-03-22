@@ -151,7 +151,7 @@ struct LoweringContext<'a, 'hir: 'a> {
     in_scope_lifetime_bounds: Vec<Ident>,
 
     ///
-    in_scope_generic_params: Vec<(ParamName, GenericParam)>,
+    in_scope_generic_params: Vec<GenericParam>,
 
     in_scope_where_clause: Option<WhereClause>,
 
@@ -892,13 +892,13 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let mut generic_def_names = Vec::new();
 
         for param in params {
-            let param_name = ParamName::Plain(param.ident.normalize_to_macros_2_0());
             match param.kind {
                 GenericParamKind::Lifetime { .. } => {
+                    let param_name = ParamName::Plain(param.ident.normalize_to_macros_2_0());
                     lt_def_names.push(param_name);
                 }
                 GenericParamKind::Type { .. } | GenericParamKind::Const { .. } => {
-                    generic_def_names.push((param_name, param.clone()));
+                    generic_def_names.push(param.clone());
                 }
             }
         }
@@ -1653,23 +1653,17 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         let opaque_ty_def_id = self.resolver.local_def_id(opaque_ty_node_id);
 
-        // Input lifetime like `'a` or `'1`:
-        let generic_params: Vec<_> = self
-            .in_scope_generic_params
-            .iter()
-            .cloned()
-            .map(|(name, param)| (name, name.ident().span, param))
-            .collect();
+        let generic_params: Vec<_> = self.in_scope_generic_params.iter().cloned().collect();
 
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
             lctx.with_fresh_remapped_def_id(|lctx| {
                 let mut all_generic_params = Vec::new();
-                for (_, _, param) in &generic_params {
+                for param in &generic_params {
                     // TODO call lower_generic_param
-                    let (name, kind) = lctx.lower_generic_param_kind(param);
+                    let (name, kind) = lctx.lower_generic_param_kind(&param);
 
                     all_generic_params.push(lctx.generic_param_from_name(
-                        param,
+                        &param,
                         kind,
                         name,
                         opaque_ty_def_id,
@@ -1725,12 +1719,13 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         });
 
         let mut all_generic_params = Vec::new();
-        for (_name, span, param) in &generic_params {
+        for param in &generic_params {
+            let span = param.span();
             let def_id = self.resolver.local_def_id(param.id).to_def_id();
             let generic_arg = match param.kind {
                 GenericParamKind::Type { .. } => hir::GenericArg::Type(hir::Ty {
                     hir_id: self.next_id(),
-                    span: *span,
+                    span,
                     kind: hir::TyKind::Path(hir::QPath::Resolved(
                         None,
                         self.arena.alloc(hir::Path {
@@ -1738,7 +1733,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                 DefKind::TyParam,
                                 *self.remapped_def_id.get(&def_id).unwrap_or(&def_id),
                             ),
-                            span: *span,
+                            span,
                             segments: &[],
                         }),
                     )),
@@ -1761,16 +1756,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                                     .get(&def_id)
                                                     .unwrap_or(&def_id),
                                             ),
-                                            span: *span,
+                                            span,
                                             segments: &[],
                                         }),
                                     )),
-                                    span: *span,
+                                    span,
                                 },
                             )
                         }),
                     },
-                    span: *span,
+                    span,
                 }),
                 _ => {
                     panic!();
