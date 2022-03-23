@@ -788,17 +788,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn generic_param_from_name(
         &mut self,
         param: &GenericParam,
-        kind: hir::GenericParamKind<'hir>,
-        hir_name: ParamName,
         parent_def_id: LocalDefId,
-        span: Span,
     ) -> hir::GenericParam<'hir> {
         let node_id = self.resolver.next_node_id();
+
+        let (name, kind) = self.lower_generic_param_kind(&param);
 
         // Get the name we'll use to make the def-path. Note
         // that collisions are ok here and this shouldn't
         // really show up for end-user.
-        let str_name = match hir_name {
+        let str_name = match name {
             ParamName::Plain(ident) => ident.name,
             _ => panic!("This can't happen"),
         };
@@ -809,22 +808,30 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             node_id,
             DefPathData::TypeNs(str_name),
             ExpnId::root(),
-            span.with_parent(None),
+            param.span().with_parent(None),
         );
 
         let orig_def_id = self.resolver.local_def_id(param.id);
         self.remapped_def_id.insert(orig_def_id.to_def_id(), def_id.to_def_id());
         trace!(?orig_def_id, ?def_id, "recording remapping");
 
+        let bounds: Vec<_> =
+            self.with_anonymous_lifetime_mode(AnonymousLifetimeMode::ReportError, |this| {
+                this.lower_param_bounds_mut(
+                    &param.bounds,
+                    ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
+                )
+                .collect()
+            });
+
+        let hir_id = self.lower_node_id(node_id);
+        self.lower_attrs(hir_id, &param.attrs);
         hir::GenericParam {
-            hir_id: self.lower_node_id(node_id),
-            name: hir_name,
-            bounds: self.lower_param_bounds(
-                &param.bounds,
-                ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
-            ),
-            span: self.lower_span(span),
-            pure_wrt_drop: false,
+            hir_id,
+            name,
+            span: self.lower_span(param.ident.span),
+            pure_wrt_drop: self.sess.contains_name(&param.attrs, sym::may_dangle),
+            bounds: self.arena.alloc_from_iter(bounds),
             kind,
         }
     }
@@ -1659,16 +1666,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             lctx.with_fresh_remapped_def_id(|lctx| {
                 let mut all_generic_params = Vec::new();
                 for param in &generic_params {
-                    // TODO call lower_generic_param
-                    let (name, kind) = lctx.lower_generic_param_kind(&param);
-
-                    all_generic_params.push(lctx.generic_param_from_name(
-                        &param,
-                        kind,
-                        name,
-                        opaque_ty_def_id,
-                        param.span(),
-                    ));
+                    all_generic_params.push(lctx.generic_param_from_name(&param, opaque_ty_def_id));
                 }
 
                 let hir_bounds = lower_bounds(lctx);
