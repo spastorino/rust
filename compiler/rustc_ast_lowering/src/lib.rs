@@ -792,21 +792,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     ) -> hir::GenericParam<'hir> {
         let node_id = self.resolver.next_node_id();
 
-        let (name, kind) = self.lower_generic_param_kind(&param);
-
-        // Get the name we'll use to make the def-path. Note
-        // that collisions are ok here and this shouldn't
-        // really show up for end-user.
-        let str_name = match name {
-            ParamName::Plain(ident) => ident.name,
-            _ => panic!("This can't happen"),
-        };
-
         // Add a definition for the generic param def.
         let def_id = self.resolver.create_def(
             parent_def_id,
             node_id,
-            DefPathData::TypeNs(str_name),
+            DefPathData::ImplTrait,
             ExpnId::root(),
             param.span().with_parent(None),
         );
@@ -815,25 +805,12 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.remapped_def_id.insert(orig_def_id.to_def_id(), def_id.to_def_id());
         trace!(?orig_def_id, ?def_id, "recording remapping");
 
-        let bounds: Vec<_> =
-            self.with_anonymous_lifetime_mode(AnonymousLifetimeMode::ReportError, |this| {
-                this.lower_param_bounds_mut(
-                    &param.bounds,
-                    ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
-                )
-                .collect()
-            });
-
-        let hir_id = self.lower_node_id(node_id);
-        self.lower_attrs(hir_id, &param.attrs);
-        hir::GenericParam {
-            hir_id,
-            name,
-            span: self.lower_span(param.ident.span),
-            pure_wrt_drop: self.sess.contains_name(&param.attrs, sym::may_dangle),
-            bounds: self.arena.alloc_from_iter(bounds),
-            kind,
-        }
+        let mut param = param.clone();
+        param.id = node_id;
+        self.lower_generic_param(
+            &param,
+            ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
+        )
     }
 
     /// When we have either an elided or `'_` lifetime in an impl
