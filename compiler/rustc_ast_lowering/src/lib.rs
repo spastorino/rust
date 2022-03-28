@@ -1644,10 +1644,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let mut collected_lifetimes = Vec::new();
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
             lctx.with_fresh_remapped_def_id(|lctx| {
-                let mut all_generic_params = Vec::new();
-                for param in &generic_params {
-                    all_generic_params.push(lctx.generic_param_from_name(&param, opaque_ty_def_id));
-                }
+                let mut all_generic_params: Vec<_> = generic_params
+                    .iter()
+                    .map(|param| lctx.generic_param_from_name(&param, opaque_ty_def_id))
+                    .collect();
 
                 let hir_bounds = lower_bounds(lctx);
 
@@ -1657,7 +1657,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     capturable_lifetimes,
                 );
 
-                let lifetime_defs = collected_lifetimes.iter().map(|&(name, span)| {
+                all_generic_params.extend(collected_lifetimes.iter().map(|&(name, span)| {
                     let def_node_id = lctx.resolver.next_node_id();
                     lctx.resolver.create_def(
                         opaque_ty_def_id,
@@ -1687,17 +1687,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         bounds: &[],
                         kind: hir::GenericParamKind::Lifetime { kind },
                     }
-                });
+                }));
 
-                debug!("lower_opaque_impl_trait: lifetime_defs={:#?}", lifetime_defs);
-                all_generic_params.extend(lifetime_defs);
+                debug!("lower_opaque_impl_trait: lifetime_defs={:#?}", all_generic_params);
 
                 let where_clause = lctx.in_scope_where_clause.as_ref().unwrap().clone();
                 let where_clause = lctx.lower_where_clause(&where_clause);
                 let opaque_ty_item = hir::OpaqueTy {
                     generics: hir::Generics {
                         params: lctx.arena.alloc_from_iter(all_generic_params),
-                        where_clause: where_clause,
+                        where_clause,
                         span: lctx.lower_span(span),
                     },
                     bounds: hir_bounds,
@@ -1709,60 +1708,60 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             })
         });
 
-        let mut all_generic_params = Vec::new();
-        for param in &generic_params {
-            let span = param.span();
-            let def_id = self.resolver.local_def_id(param.id).to_def_id();
-            let generic_arg = match param.kind {
-                GenericParamKind::Type { .. } => hir::GenericArg::Type(hir::Ty {
-                    hir_id: self.next_id(),
-                    span,
-                    kind: hir::TyKind::Path(hir::QPath::Resolved(
-                        None,
-                        self.arena.alloc(hir::Path {
-                            res: Res::Def(
-                                DefKind::TyParam,
-                                *self.remapped_def_id.get(&def_id).unwrap_or(&def_id),
-                            ),
-                            span,
-                            segments: &[],
-                        }),
-                    )),
-                }),
-                GenericParamKind::Const { .. } => hir::GenericArg::Const(hir::ConstArg {
-                    value: hir::AnonConst {
+        let mut all_generic_params: Vec<_> = generic_params
+            .iter()
+            .map(|param| {
+                let span = param.span();
+                let def_id = self.resolver.local_def_id(param.id).to_def_id();
+                match param.kind {
+                    GenericParamKind::Type { .. } => hir::GenericArg::Type(hir::Ty {
                         hir_id: self.next_id(),
-                        body: self.lower_body(|this| {
-                            (
-                                &[],
-                                hir::Expr {
-                                    hir_id: this.next_id(),
-                                    kind: hir::ExprKind::Path(hir::QPath::Resolved(
-                                        None,
-                                        this.arena.alloc(hir::Path {
-                                            res: Res::Def(
-                                                DefKind::Const,
-                                                *this
-                                                    .remapped_def_id
-                                                    .get(&def_id)
-                                                    .unwrap_or(&def_id),
-                                            ),
-                                            span,
-                                            segments: &[],
-                                        }),
-                                    )),
-                                    span,
-                                },
-                            )
-                        }),
-                    },
-                    span,
-                }),
-                _ => panic!("unreachable"),
-            };
-
-            all_generic_params.push(generic_arg);
-        }
+                        span,
+                        kind: hir::TyKind::Path(hir::QPath::Resolved(
+                            None,
+                            self.arena.alloc(hir::Path {
+                                res: Res::Def(
+                                    DefKind::TyParam,
+                                    *self.remapped_def_id.get(&def_id).unwrap_or(&def_id),
+                                ),
+                                span,
+                                segments: &[],
+                            }),
+                        )),
+                    }),
+                    GenericParamKind::Const { .. } => hir::GenericArg::Const(hir::ConstArg {
+                        value: hir::AnonConst {
+                            hir_id: self.next_id(),
+                            body: self.lower_body(|this| {
+                                (
+                                    &[],
+                                    hir::Expr {
+                                        hir_id: this.next_id(),
+                                        kind: hir::ExprKind::Path(hir::QPath::Resolved(
+                                            None,
+                                            this.arena.alloc(hir::Path {
+                                                res: Res::Def(
+                                                    DefKind::Const,
+                                                    *this
+                                                        .remapped_def_id
+                                                        .get(&def_id)
+                                                        .unwrap_or(&def_id),
+                                                ),
+                                                span,
+                                                segments: &[],
+                                            }),
+                                        )),
+                                        span,
+                                    },
+                                )
+                            }),
+                        },
+                        span,
+                    }),
+                    _ => panic!("unreachable"),
+                }
+            })
+            .collect();
 
         all_generic_params.extend(collected_lifetimes.into_iter().map(|(name, span)| {
             hir::GenericArg::Lifetime(hir::Lifetime { hir_id: self.next_id(), span, name })
