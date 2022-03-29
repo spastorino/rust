@@ -1648,69 +1648,87 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     .iter()
                     .map(|param| lctx.generic_param_from_name(&param, opaque_ty_def_id))
                     .collect();
+                debug!(
+                    "lower_opaque_impl_trait_v2: types_consts_params={:#?}",
+                    types_consts_params
+                );
 
                 let hir_bounds = lower_bounds(lctx);
 
-                collected_lifetimes = lifetimes_from_impl_trait_bounds(
-                    opaque_ty_node_id,
-                    &hir_bounds,
-                    capturable_lifetimes,
-                );
+                lctx.with_in_scope_lifetime_bounds(|lctx| {
+                    collected_lifetimes = lifetimes_from_impl_trait_bounds(
+                        opaque_ty_node_id,
+                        &hir_bounds,
+                        capturable_lifetimes,
+                    );
+                    debug!(
+                        "lower_opaque_impl_trait_v2: collected_lifetimes={:#?}",
+                        collected_lifetimes
+                    );
 
-                let mut all_generic_params: Vec<_> = collected_lifetimes
-                    .iter()
-                    .map(|&(name, span)| {
-                        let def_node_id = lctx.resolver.next_node_id();
-                        lctx.resolver.create_def(
-                            opaque_ty_def_id,
-                            def_node_id,
-                            DefPathData::LifetimeNs(name.ident().name),
-                            ExpnId::root(),
-                            span.with_parent(None),
-                        );
-                        let hir_id = lctx.lower_node_id(def_node_id);
+                    let mut all_generic_params: Vec<_> = collected_lifetimes
+                        .iter()
+                        .map(|&(name, span)| {
+                            let def_node_id = lctx.resolver.next_node_id();
+                            lctx.resolver.create_def(
+                                opaque_ty_def_id,
+                                def_node_id,
+                                DefPathData::LifetimeNs(name.ident().name),
+                                ExpnId::root(),
+                                span.with_parent(None),
+                            );
+                            let hir_id = lctx.lower_node_id(def_node_id);
 
-                        let (name, kind) = match name {
-                            hir::LifetimeName::Underscore => (
-                                hir::ParamName::Plain(Ident::with_dummy_span(
-                                    kw::UnderscoreLifetime,
-                                )),
-                                hir::LifetimeParamKind::Elided,
-                            ),
-                            hir::LifetimeName::Param(param_name) => {
-                                (param_name, hir::LifetimeParamKind::Explicit)
+                            let (name, kind) = match name {
+                                hir::LifetimeName::Underscore => (
+                                    hir::ParamName::Plain(Ident::with_dummy_span(
+                                        kw::UnderscoreLifetime,
+                                    )),
+                                    hir::LifetimeParamKind::Elided,
+                                ),
+                                hir::LifetimeName::Param(param_name) => {
+                                    (param_name, hir::LifetimeParamKind::Explicit)
+                                }
+                                _ => panic!("expected `LifetimeName::Param` or `ParamName::Plain`"),
+                            };
+
+                            hir::GenericParam {
+                                hir_id,
+                                name,
+                                span,
+                                pure_wrt_drop: false,
+                                bounds: &[],
+                                kind: hir::GenericParamKind::Lifetime { kind },
                             }
-                            _ => panic!("expected `LifetimeName::Param` or `ParamName::Plain`"),
-                        };
+                        })
+                        .collect();
 
-                        hir::GenericParam {
-                            hir_id,
-                            name,
-                            span,
-                            pure_wrt_drop: false,
-                            bounds: &[],
-                            kind: hir::GenericParamKind::Lifetime { kind },
-                        }
-                    })
-                    .collect();
+                    debug!("lower_opaque_impl_trait_v2: lifetime_defs={:#?}", all_generic_params);
+                    all_generic_params.extend(types_consts_params);
 
-                debug!("lower_opaque_impl_trait: lifetime_defs={:#?}", all_generic_params);
-                all_generic_params.extend(types_consts_params);
+                    let where_clause = lctx.in_scope_where_clause.as_ref().unwrap().clone();
+                    let where_clause = lctx.lower_where_clause(&where_clause);
+                    debug!("lower_opaque_impl_trait_v2: where_clause={:#?}", where_clause);
 
-                let where_clause = lctx.in_scope_where_clause.as_ref().unwrap().clone();
-                let where_clause = lctx.lower_where_clause(&where_clause);
-                let opaque_ty_item = hir::OpaqueTy {
-                    generics: hir::Generics {
-                        params: lctx.arena.alloc_from_iter(all_generic_params),
-                        where_clause,
-                        span: lctx.lower_span(span),
-                    },
-                    bounds: hir_bounds,
-                    origin,
-                };
+                    let opaque_ty_item = hir::OpaqueTy {
+                        generics: hir::Generics {
+                            params: lctx.arena.alloc_from_iter(all_generic_params),
+                            where_clause,
+                            span: lctx.lower_span(span),
+                        },
+                        bounds: hir_bounds,
+                        origin,
+                    };
+                    debug!("lower_opaque_impl_trait_v2: opaque_ty_item={:#?}", opaque_ty_item);
 
-                trace!("lower_opaque_impl_trait_v2: {:#?}", opaque_ty_def_id);
-                lctx.generate_opaque_type(opaque_ty_def_id, opaque_ty_item, span, opaque_ty_span)
+                    trace!("lower_opaque_impl_trait_v2: {:#?}", opaque_ty_def_id);
+                    lctx.generate_opaque_type(
+                        opaque_ty_def_id,
+                        opaque_ty_item,
+                        span,
+                        opaque_ty_span,
+                    )
+                })
             })
         });
 
