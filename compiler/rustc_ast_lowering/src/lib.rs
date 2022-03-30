@@ -785,28 +785,34 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     /// Converts a generic type into a new generic parameter.
     #[instrument(level = "debug", skip(self))]
-    fn generic_param_from_name(
+    fn lower_generic_param_copy(
         &mut self,
         param: &GenericParam,
         parent_def_id: LocalDefId,
     ) -> hir::GenericParam<'hir> {
-        let node_id = self.resolver.next_node_id();
+        let orig_def_id = self.resolver.local_def_id(param.id);
+
+        let param = GenericParam {
+            id: self.resolver.next_node_id(),
+            ident: param.ident,
+            attrs: param.attrs.clone(),
+            bounds: param.bounds.clone(),
+            is_placeholder: param.is_placeholder,
+            kind: param.kind.clone(),
+        };
 
         // Add a definition for the generic param def.
         let def_id = self.resolver.create_def(
             parent_def_id,
-            node_id,
+            param.id,
             DefPathData::ImplTrait,
             ExpnId::root(),
             param.span().with_parent(None),
         );
 
-        let orig_def_id = self.resolver.local_def_id(param.id);
         self.remapped_def_id.insert(orig_def_id.to_def_id(), def_id.to_def_id());
         trace!(?orig_def_id, ?def_id, "recording remapping");
 
-        let mut param = param.clone();
-        param.id = node_id;
         self.lower_generic_param(
             &param,
             ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
@@ -1646,7 +1652,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             lctx.with_fresh_remapped_def_id(|lctx| {
                 let types_consts_params: Vec<_> = generic_params
                     .iter()
-                    .map(|param| lctx.generic_param_from_name(&param, opaque_ty_def_id))
+                    .map(|param| lctx.lower_generic_param_copy(&param, opaque_ty_def_id))
                     .collect();
                 debug!(
                     "lower_opaque_impl_trait_v2: types_consts_params={:#?}",
@@ -1741,7 +1747,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         all_generic_params.extend(generic_params.iter().map(|param| {
             let span = param.span();
-            let def_id = self.resolver.local_def_id(param.id).to_def_id();
+            let local_def_id = self.resolver.local_def_id(param.id);
+            let def_id = local_def_id.to_def_id();
             match param.kind {
                 GenericParamKind::Type { .. } => hir::GenericArg::Type(hir::Ty {
                     hir_id: self.next_id(),
@@ -1758,35 +1765,47 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         }),
                     )),
                 }),
-                GenericParamKind::Const { .. } => hir::GenericArg::Const(hir::ConstArg {
-                    value: hir::AnonConst {
-                        hir_id: self.next_id(),
-                        body: self.lower_body(|this| {
-                            (
-                                &[],
-                                hir::Expr {
-                                    hir_id: this.next_id(),
-                                    kind: hir::ExprKind::Path(hir::QPath::Resolved(
-                                        None,
-                                        this.arena.alloc(hir::Path {
-                                            res: Res::Def(
-                                                DefKind::Const,
-                                                *this
-                                                    .remapped_def_id
-                                                    .get(&def_id)
-                                                    .unwrap_or(&def_id),
-                                            ),
-                                            span,
-                                            segments: &[],
-                                        }),
-                                    )),
-                                    span,
-                                },
-                            )
-                        }),
-                    },
-                    span,
-                }),
+                GenericParamKind::Const { .. } => {
+                    let node_id = self.resolver.next_node_id();
+                    self.resolver.create_def(
+                        local_def_id,
+                        node_id,
+                        DefPathData::AnonConst,
+                        ExpnId::root(),
+                        span,
+                    );
+                    let hir_id = self.lower_node_id(node_id);
+
+                    hir::GenericArg::Const(hir::ConstArg {
+                        value: hir::AnonConst {
+                            hir_id,
+                            body: self.lower_body(|this| {
+                                (
+                                    &[],
+                                    hir::Expr {
+                                        hir_id: this.next_id(),
+                                        kind: hir::ExprKind::Path(hir::QPath::Resolved(
+                                            None,
+                                            this.arena.alloc(hir::Path {
+                                                res: Res::Def(
+                                                    DefKind::Const,
+                                                    *this
+                                                        .remapped_def_id
+                                                        .get(&def_id)
+                                                        .unwrap_or(&def_id),
+                                                ),
+                                                span,
+                                                segments: &[],
+                                            }),
+                                        )),
+                                        span,
+                                    },
+                                )
+                            }),
+                        },
+                        span,
+                    })
+                }
                 _ => panic!("unreachable"),
             }
         }));
