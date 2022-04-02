@@ -638,6 +638,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                 assert_ne!(local_id, hir::ItemLocalId::new(0));
                 if let Some(def_id) = self.resolver.opt_local_def_id(ast_node_id) {
+                    let def_id = def_id.to_def_id();
+                    let def_id = self.remapped_def_id.get(&def_id).unwrap_or(&def_id);
+                    let def_id = def_id.as_local().unwrap();
                     self.owners.ensure_contains_elem(def_id, || hir::MaybeOwner::Phantom);
                     if let o @ hir::MaybeOwner::Phantom = &mut self.owners[def_id] {
                         // Do not override a `MaybeOwner::Owner` that may already here.
