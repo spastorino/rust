@@ -786,33 +786,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         }
     }
 
-    /// Converts a generic type into a new generic parameter.
-    #[instrument(level = "debug", skip(self))]
-    fn lower_generic_param_copy(
-        &mut self,
-        param: &GenericParam,
-        parent_def_id: LocalDefId,
-    ) -> hir::GenericParam<'hir> {
-        let orig_def_id = self.resolver.local_def_id(param.id);
-
-        // Add a definition for the generic param def.
-        let def_id = self.resolver.create_def(
-            parent_def_id,
-            DUMMY_NODE_ID,
-            DefPathData::ImplTrait,
-            ExpnId::root(),
-            param.span().with_parent(None),
-        );
-
-        self.remapped_def_id.insert(orig_def_id.to_def_id(), def_id.to_def_id());
-        trace!(?orig_def_id, ?def_id, "recording remapping");
-
-        self.lower_generic_param(
-            &param,
-            ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
-        )
-    }
-
     /// When we have either an elided or `'_` lifetime in an impl
     /// header, we convert it to an in-band lifetime.
     fn collect_fresh_anonymous_lifetime(&mut self, span: Span) -> ParamName {
@@ -1646,7 +1619,26 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             lctx.with_fresh_remapped_def_id(|lctx| {
                 let types_consts_params: Vec<_> = generic_params
                     .iter()
-                    .map(|param| lctx.lower_generic_param_copy(&param, opaque_ty_def_id))
+                    .map(|param| {
+                        let orig_def_id = lctx.resolver.local_def_id(param.id);
+
+                        // Add a definition for the generic param def.
+                        let def_id = lctx.resolver.create_def(
+                            opaque_ty_def_id,
+                            DUMMY_NODE_ID,
+                            DefPathData::ImplTrait,
+                            ExpnId::root(),
+                            param.span().with_parent(None),
+                        );
+
+                        lctx.remapped_def_id.insert(orig_def_id.to_def_id(), def_id.to_def_id());
+                        trace!(?orig_def_id, ?def_id, "recording remapping");
+
+                        lctx.lower_generic_param(
+                            &param,
+                            ImplTraitContext::Disallowed(ImplTraitPosition::ImplReturn),
+                        )
+                    })
                     .collect();
                 debug!(
                     "lower_opaque_impl_trait_v2: types_consts_params={:#?}",
