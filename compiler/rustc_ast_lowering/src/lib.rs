@@ -795,19 +795,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     ) -> hir::GenericParam<'hir> {
         let orig_def_id = self.resolver.local_def_id(param.id);
 
-        let param = GenericParam {
-            id: self.resolver.next_node_id(),
-            ident: param.ident,
-            attrs: param.attrs.clone(),
-            bounds: param.bounds.clone(),
-            is_placeholder: param.is_placeholder,
-            kind: param.kind.clone(),
-        };
-
         // Add a definition for the generic param def.
         let def_id = self.resolver.create_def(
             parent_def_id,
-            param.id,
+            DUMMY_NODE_ID,
             DefPathData::ImplTrait,
             ExpnId::root(),
             param.span().with_parent(None),
