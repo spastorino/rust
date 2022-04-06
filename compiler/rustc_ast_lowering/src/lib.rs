@@ -1781,7 +1781,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                                         .unwrap_or(&def_id),
                                                 ),
                                                 span,
-                                                segments: &[],
+                                                segments: arena_vec![this; hir::PathSegment::from_ident(this.lower_ident(param.ident))],
                                             }),
                                         )),
                                         span,
