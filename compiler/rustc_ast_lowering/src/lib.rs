@@ -1747,14 +1747,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                 *self.remapped_def_id.get(&def_id).unwrap_or(&def_id),
                             ),
                             span,
-                            segments: &[],
+                            segments: arena_vec![self; hir::PathSegment::from_ident(self.lower_ident(param.ident))],
                         }),
                     )),
                 }),
                 GenericParamKind::Const { .. } => {
+                    let parent_def_id = self.current_hir_id_owner;
                     let node_id = self.resolver.next_node_id();
+                    let const_def_id = *self.remapped_def_id.get(&def_id).unwrap_or(&def_id);
                     self.resolver.create_def(
-                        local_def_id,
+                        parent_def_id,
                         node_id,
                         DefPathData::AnonConst,
                         ExpnId::root(),
@@ -1762,23 +1764,20 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     );
                     let hir_id = self.lower_node_id(node_id);
 
-                    hir::GenericArg::Const(hir::ConstArg {
-                        value: hir::AnonConst {
-                            hir_id,
-                            body: self.lower_body(|this| {
-                                (
-                                    &[],
-                                    hir::Expr {
-                                        hir_id: this.next_id(),
-                                        kind: hir::ExprKind::Path(hir::QPath::Resolved(
+                    let span = self.lower_span(span);
+                    let ct = hir::AnonConst {
+                        hir_id,
+                        body: self.lower_body(|this| {
+                            (
+                                &[],
+                                hir::Expr {
+                                    hir_id: this.next_id(),
+                                    kind: hir::ExprKind::Path(hir::QPath::Resolved(
                                             None,
                                             this.arena.alloc(hir::Path {
                                                 res: Res::Def(
-                                                    DefKind::Const,
-                                                    *this
-                                                        .remapped_def_id
-                                                        .get(&def_id)
-                                                        .unwrap_or(&def_id),
+                                                    DefKind::ConstParam,
+                                                    const_def_id,
                                                 ),
                                                 span,
                                                 segments: arena_vec![this; hir::PathSegment::from_ident(this.lower_ident(param.ident))],
@@ -1788,9 +1787,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                     },
                                 )
                             }),
-                        },
-                        span,
-                    })
+                    };
+                    hir::GenericArg::Const(ConstArg { value: ct, span })
                 }
                 _ => panic!("unreachable"),
             }
