@@ -1183,6 +1183,7 @@ symbols! {
         require,
         residual,
         result,
+        return_position_impl_trait_v2,
         rhs,
         rintf32,
         rintf64,
