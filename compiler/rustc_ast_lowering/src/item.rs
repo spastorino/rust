@@ -866,6 +866,8 @@ impl<'hir> LoweringContext<'_, 'hir> {
             }
             AssocItemKind::Fn(box Fn { sig, generics, body, .. }) => {
                 self.current_item = Some(i.span);
+                // FIXME: impl traits in return position start here, should we handle some extra
+                // information?.
                 let asyncness = sig.header.asyncness;
                 let body_id =
                     self.lower_maybe_async_body(i.span, &sig.decl, asyncness, body.as_deref());

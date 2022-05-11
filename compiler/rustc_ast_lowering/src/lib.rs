@@ -1207,10 +1207,17 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             TyKind::ImplTrait(def_node_id, ref bounds) => {
                 let span = t.span;
                 match itctx {
-                    ImplTraitContext::ReturnPositionOpaqueTy { origin } => self
-                        .lower_opaque_impl_trait(span, origin, def_node_id, |this| {
-                            this.lower_param_bounds(bounds, itctx)
-                        }),
+                    ImplTraitContext::ReturnPositionOpaqueTy { origin } => {
+                        if self.sess.features_untracked().return_position_impl_trait_v2 {
+                            self.lower_opaque_impl_trait_v2(span, origin, def_node_id, |this| {
+                                this.lower_param_bounds(bounds, itctx)
+                            })
+                        } else {
+                            self.lower_opaque_impl_trait(span, origin, def_node_id, |this| {
+                                this.lower_param_bounds(bounds, itctx)
+                            })
+                        }
+                    }
                     ImplTraitContext::TypeAliasesOpaqueTy => {
                         let nested_itctx = ImplTraitContext::TypeAliasesOpaqueTy;
                         self.lower_opaque_impl_trait(
@@ -1340,6 +1347,36 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         // `impl Trait` now just becomes `Foo<'a, 'b, ..>`.
         hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, lifetimes)
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, lower_bounds))]
+    fn lower_opaque_impl_trait_v2(
+        &mut self,
+        span: Span,
+        origin: hir::OpaqueTyOrigin,
+        opaque_ty_node_id: NodeId,
+        lower_bounds: impl FnOnce(&mut Self) -> hir::GenericBounds<'hir>,
+    ) -> hir::TyKind<'hir> {
+        // Make sure we know that some funky desugaring has been going on here.
+        // This is a first: there is code in other places like for loop
+        // desugaring that explicitly states that we don't want to track that.
+        // Not tracking it makes lints in rustc and clippy very fragile, as
+        // frequently opened issues show.
+        let opaque_ty_span = self.mark_span_with_reason(DesugaringKind::OpaqueTy, span, None);
+
+        let opaque_ty_def_id = self.resolver.local_def_id(opaque_ty_node_id);
+
+        self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
+            let hir_bounds = lower_bounds(lctx);
+            let opaque_ty_item =
+                hir::OpaqueTy { generics: hir::Generics::empty(), bounds: hir_bounds, origin };
+
+            trace!("lower_opaque_impl_trait_v2: {:#?}", opaque_ty_def_id);
+            lctx.generate_opaque_type(opaque_ty_def_id, opaque_ty_item, span, opaque_ty_span)
+        });
+
+        // `impl Trait` now just becomes `Foo<'a, 'b, ..>`.
+        hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, &[])
     }
 
     /// Registers a new opaque type with the proper `NodeId`s and
