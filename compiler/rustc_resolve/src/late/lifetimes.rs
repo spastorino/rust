@@ -932,7 +932,12 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
 
                 // We want to start our early-bound indices at the end of the parent scope,
                 // not including any parent `impl Trait`s.
-                let mut index = self.next_early_index_for_opaque_type();
+                let mut index = if self.tcx.sess.features_untracked().return_position_impl_trait_v2
+                {
+                    0
+                } else {
+                    self.next_early_index_for_opaque_type()
+                };
                 debug!(?index);
 
                 let mut elision = None;
