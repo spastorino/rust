@@ -1500,17 +1500,54 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         let opaque_ty_def_id = self.resolver.local_def_id(opaque_ty_node_id);
 
+        let mut collected_lifetimes = FxHashMap::default();
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
-            let hir_bounds = lower_bounds(lctx);
+            let hir_bounds = if origin == hir::OpaqueTyOrigin::TyAlias {
+                lower_bounds(lctx)
+            } else {
+                lctx.while_capturing_lifetimes(
+                    opaque_ty_def_id,
+                    &mut collected_lifetimes,
+                    lower_bounds,
+                )
+            };
+            debug!(?collected_lifetimes);
+
+            let lifetime_params: Vec<_> = collected_lifetimes
+                .iter()
+                .map(|(_, &(span, p_id, p_name, _))| {
+                    let hir_id = lctx.lower_node_id(p_id);
+                    debug_assert_ne!(lctx.resolver.opt_local_def_id(p_id), None);
+
+                    let kind = if p_name.ident().name == kw::UnderscoreLifetime {
+                        hir::LifetimeParamKind::Elided
+                    } else {
+                        hir::LifetimeParamKind::Explicit
+                    };
+
+                    hir::GenericParam {
+                        hir_id,
+                        name: p_name,
+                        span,
+                        pure_wrt_drop: false,
+                        kind: hir::GenericParamKind::Lifetime { kind },
+                        colon_span: None,
+                    }
+                })
+                .collect();
+
+            debug!(?lifetime_params);
 
             let type_const_params =
                 lctx.collect_type_and_const_params(opaque_ty_def_id, ast_generic_params);
 
-            debug!("lower_opaque_impl_trait_v2: type_const_params={:#?}", type_const_params);
+            debug!(?type_const_params);
+
+            let generic_params = lifetime_params.into_iter().chain(type_const_params.into_iter());
 
             let opaque_ty_item = hir::OpaqueTy {
                 generics: self.arena.alloc(hir::Generics {
-                    params: self.arena.alloc_from_iter(type_const_params.into_iter()),
+                    params: self.arena.alloc_from_iter(generic_params),
                     predicates: &[],
                     has_where_clause: false,
                     where_clause_span: lctx.lower_span(span),
@@ -1520,7 +1557,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 origin,
             };
 
-            trace!("lower_opaque_impl_trait_v2: {:#?}", opaque_ty_def_id);
+            trace!(?opaque_ty_def_id);
             lctx.generate_opaque_type(opaque_ty_def_id, opaque_ty_item, span, opaque_ty_span)
         });
 
