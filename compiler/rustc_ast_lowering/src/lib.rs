@@ -126,6 +126,10 @@ struct LoweringContext<'a, 'hir: 'a> {
     /// Used to handle lifetimes appearing in impl-traits.
     captured_lifetimes: Option<LifetimeCaptureContext>,
 
+    /// Used to map to the right def_id on generic parameters that are copied from the containing
+    /// function into an inner type (e.g. impl trait).
+    generics_def_id_map: FxHashMap<DefId, DefId>,
+
     current_hir_id_owner: LocalDefId,
     item_local_id_counter: hir::ItemLocalId,
     local_id_to_def_id: SortedMap<ItemLocalId, LocalDefId>,
@@ -523,6 +527,13 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         debug_assert!(_old.is_none())
     }
 
+    fn with_fresh_generics_def_id_map<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let current_map = std::mem::take(&mut self.generics_def_id_map);
+        let result = f(self);
+        self.generics_def_id_map = current_map;
+        result
+    }
+
     fn make_owner_info(&mut self, node: hir::OwnerNode<'hir>) -> &'hir hir::OwnerInfo<'hir> {
         let attrs = std::mem::take(&mut self.attrs);
         let mut bodies = std::mem::take(&mut self.bodies);
@@ -605,6 +616,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                 assert_ne!(local_id, hir::ItemLocalId::new(0));
                 if let Some(def_id) = self.resolver.opt_local_def_id(ast_node_id) {
+                    let def_id = def_id.to_def_id();
+                    let def_id = self.generics_def_id_map.get(&def_id).unwrap_or(&def_id);
+                    let def_id = def_id.as_local().unwrap();
                     // Do not override a `MaybeOwner::Owner` that may already here.
                     self.children.entry(def_id).or_insert(hir::MaybeOwner::NonOwner(hir_id));
                     self.local_id_to_def_id.insert(local_id, def_id);
@@ -626,6 +640,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     #[instrument(level = "trace", skip(self))]
     fn lower_res(&mut self, res: Res<NodeId>) -> Res {
+        let res =
+            res.map_def_id(|def_id| *self.generics_def_id_map.get(&def_id).unwrap_or(&def_id));
+        trace!(?res, "from remapping");
+
         let res: Result<Res, ()> = res.apply_id(|id| {
             let owner = self.current_hir_id_owner;
             let local_id = self.node_id_to_local_id.get(&id).copied().ok_or(())?;
@@ -775,14 +793,19 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 matches!(param.kind, GenericParamKind::Const { .. } | GenericParamKind::Type { .. })
             })
             .map(|param| {
+                let orig_def_id = self.resolver.local_def_id(param.id);
+
                 // Add a definition for the generic param def.
-                self.resolver.create_def(
+                let new_def_id = self.resolver.create_def(
                     parent_def_id,
                     DUMMY_NODE_ID,
                     DefPathData::ImplTrait,
                     ExpnId::root(),
                     param.span().with_parent(None),
                 );
+
+                self.generics_def_id_map.insert(orig_def_id.to_def_id(), new_def_id.to_def_id());
+                trace!(?orig_def_id, ?new_def_id, "recording remapping");
 
                 self.lower_generic_param(&param)
             })
@@ -1502,63 +1525,66 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         let mut collected_lifetimes = FxHashMap::default();
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
-            let hir_bounds = if origin == hir::OpaqueTyOrigin::TyAlias {
-                lower_bounds(lctx)
-            } else {
-                lctx.while_capturing_lifetimes(
-                    opaque_ty_def_id,
-                    &mut collected_lifetimes,
-                    lower_bounds,
-                )
-            };
-            debug!(?collected_lifetimes);
+            lctx.with_fresh_generics_def_id_map(|lctx| {
+                let hir_bounds = if origin == hir::OpaqueTyOrigin::TyAlias {
+                    lower_bounds(lctx)
+                } else {
+                    lctx.while_capturing_lifetimes(
+                        opaque_ty_def_id,
+                        &mut collected_lifetimes,
+                        lower_bounds,
+                    )
+                };
+                debug!(?collected_lifetimes);
 
-            let lifetime_params: Vec<_> = collected_lifetimes
-                .iter()
-                .map(|(_, &(span, p_id, p_name, _))| {
-                    let hir_id = lctx.lower_node_id(p_id);
-                    debug_assert_ne!(lctx.resolver.opt_local_def_id(p_id), None);
+                let lifetime_params: Vec<_> = collected_lifetimes
+                    .iter()
+                    .map(|(_, &(span, p_id, p_name, _))| {
+                        let hir_id = lctx.lower_node_id(p_id);
+                        debug_assert_ne!(lctx.resolver.opt_local_def_id(p_id), None);
 
-                    let kind = if p_name.ident().name == kw::UnderscoreLifetime {
-                        hir::LifetimeParamKind::Elided
-                    } else {
-                        hir::LifetimeParamKind::Explicit
-                    };
+                        let kind = if p_name.ident().name == kw::UnderscoreLifetime {
+                            hir::LifetimeParamKind::Elided
+                        } else {
+                            hir::LifetimeParamKind::Explicit
+                        };
 
-                    hir::GenericParam {
-                        hir_id,
-                        name: p_name,
-                        span,
-                        pure_wrt_drop: false,
-                        kind: hir::GenericParamKind::Lifetime { kind },
-                        colon_span: None,
-                    }
-                })
-                .collect();
+                        hir::GenericParam {
+                            hir_id,
+                            name: p_name,
+                            span,
+                            pure_wrt_drop: false,
+                            kind: hir::GenericParamKind::Lifetime { kind },
+                            colon_span: None,
+                        }
+                    })
+                    .collect();
 
-            debug!(?lifetime_params);
+                debug!(?lifetime_params);
 
-            let type_const_params =
-                lctx.collect_type_and_const_params(opaque_ty_def_id, ast_generic_params);
+                let type_const_params =
+                    lctx.collect_type_and_const_params(opaque_ty_def_id, ast_generic_params);
 
-            debug!(?type_const_params);
+                debug!(?type_const_params);
 
-            let generic_params = lifetime_params.into_iter().chain(type_const_params.into_iter());
+                let generic_params =
+                    lifetime_params.into_iter().chain(type_const_params.into_iter());
 
-            let opaque_ty_item = hir::OpaqueTy {
-                generics: self.arena.alloc(hir::Generics {
-                    params: self.arena.alloc_from_iter(generic_params),
-                    predicates: &[],
-                    has_where_clause: false,
-                    where_clause_span: lctx.lower_span(span),
-                    span: lctx.lower_span(span),
-                }),
-                bounds: hir_bounds,
-                origin,
-            };
+                let opaque_ty_item = hir::OpaqueTy {
+                    generics: self.arena.alloc(hir::Generics {
+                        params: self.arena.alloc_from_iter(generic_params),
+                        predicates: &[],
+                        has_where_clause: false,
+                        where_clause_span: lctx.lower_span(span),
+                        span: lctx.lower_span(span),
+                    }),
+                    bounds: hir_bounds,
+                    origin,
+                };
 
-            trace!(?opaque_ty_def_id);
-            lctx.generate_opaque_type(opaque_ty_def_id, opaque_ty_item, span, opaque_ty_span)
+                trace!(?opaque_ty_def_id);
+                lctx.generate_opaque_type(opaque_ty_def_id, opaque_ty_item, span, opaque_ty_span)
+            })
         });
 
         // `impl Trait` now just becomes `Foo<'a, 'b, ..>`.
