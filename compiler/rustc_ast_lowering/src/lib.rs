@@ -812,6 +812,86 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             .collect()
     }
 
+    /// Collect a "to be lowered" copy of each type and const argument, skipping lifetimes.
+    #[instrument(level = "debug", skip(self))]
+    fn collect_type_and_const_args(
+        &mut self,
+        params: &[GenericParam],
+    ) -> Vec<hir::GenericArg<'hir>> {
+        params
+            .iter()
+            .filter(|param| {
+                matches!(param.kind, GenericParamKind::Const { .. } | GenericParamKind::Type { .. })
+            })
+            .map(|param| {
+                let span = param.span();
+                let local_def_id = self.resolver.local_def_id(param.id);
+                let def_id = local_def_id.to_def_id();
+
+                match param.kind {
+                    GenericParamKind::Lifetime => {
+                        unreachable!("Lifetimes should have been filtered at this point.")
+                    }
+                    GenericParamKind::Type { .. } => hir::GenericArg::Type(hir::Ty {
+                        hir_id: self.next_id(),
+                        span,
+                        kind: hir::TyKind::Path(hir::QPath::Resolved(
+                            None,
+                            self.arena.alloc(hir::Path {
+                                res: Res::Def(
+                                    DefKind::TyParam,
+                                    *self.generics_def_id_map.get(&def_id).unwrap_or(&def_id),
+                                ),
+                                span,
+                                segments: arena_vec![self; hir::PathSegment::from_ident(self.lower_ident(param.ident))],
+                            }),
+                        )),
+                    }),
+                    GenericParamKind::Const { .. } => {
+                        let parent_def_id = self.current_hir_id_owner;
+                        let node_id = self.resolver.next_node_id();
+                        let const_def_id = *self.generics_def_id_map.get(&def_id).unwrap_or(&def_id);
+                        self.resolver.create_def(
+                            parent_def_id,
+                            node_id,
+                            DefPathData::AnonConst,
+                            ExpnId::root(),
+                            span,
+                        );
+                        let hir_id = self.lower_node_id(node_id);
+
+                        let span = self.lower_span(span);
+                        let ct = hir::AnonConst {
+                            hir_id,
+                            body: self.lower_body(|this| {
+                                (
+                                    &[],
+                                    hir::Expr {
+                                        hir_id: this.next_id(),
+                                        kind: hir::ExprKind::Path(hir::QPath::Resolved(
+                                            None,
+                                            this.arena.alloc(hir::Path {
+                                                res: Res::Def(
+                                                    DefKind::ConstParam,
+                                                    const_def_id,
+                                                ),
+                                                span,
+                                                segments: arena_vec![this; hir::PathSegment::from_ident(this.lower_ident(param.ident))],
+                                            }),
+                                        )),
+                                        span,
+                                    },
+                                )
+                            }),
+                        };
+
+                        hir::GenericArg::Const(hir::ConstArg { value: ct, span })
+                    }
+                }
+            })
+            .collect()
+    }
+
     /// Setup lifetime capture for and impl-trait.
     /// The captures will be added to `captures`.
     fn while_capturing_lifetimes<T>(
@@ -1587,8 +1667,12 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             })
         });
 
+        let type_const_args = self
+            .arena
+            .alloc_from_iter(self.collect_type_and_const_args(ast_generic_params).into_iter());
+
         // `impl Trait` now just becomes `Foo<'a, 'b, ..>`.
-        hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, &[])
+        hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, type_const_args)
     }
 
     /// Registers a new opaque type with the proper `NodeId`s and
