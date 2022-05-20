@@ -978,6 +978,8 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
                         return;
                     }
                     // RPIT (return position impl trait)
+                    // FIXME: how to properly handle this in v2?
+                    // should we do the same we are doing above for TyAlias
                     hir::ItemKind::OpaqueTy(hir::OpaqueTy {
                         origin: hir::OpaqueTyOrigin::FnReturn(..) | hir::OpaqueTyOrigin::AsyncFn(..),
                         ref generics,
