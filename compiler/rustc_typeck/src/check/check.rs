@@ -704,6 +704,7 @@ fn check_opaque_meets_bounds<'tcx>(
 
         match origin {
             // Checked when type checking the function containing them.
+            // FIXME: FnReturn v2 we are avoiding lifetime checks but we should be able to do that now
             hir::OpaqueTyOrigin::FnReturn(..) | hir::OpaqueTyOrigin::AsyncFn(..) => {}
             // Can have different predicates to their defining use
             hir::OpaqueTyOrigin::TyAlias => {
