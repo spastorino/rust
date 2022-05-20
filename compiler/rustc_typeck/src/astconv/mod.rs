@@ -2694,14 +2694,39 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         result_ty
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     fn impl_trait_ty_to_ty(
         &self,
         def_id: DefId,
-        lifetimes: &[hir::GenericArg<'_>],
+        generic_args: &[hir::GenericArg<'_>],
         origin: OpaqueTyOrigin,
     ) -> Ty<'tcx> {
-        debug!("impl_trait_ty_to_ty(def_id={:?}, lifetimes={:?})", def_id, lifetimes);
         let tcx = self.tcx();
+
+        if tcx.sess.features_untracked().return_position_impl_trait_v2 {
+            let substs: Vec<_> = generic_args
+                .iter()
+                .map(|generic_arg| match generic_arg {
+                    GenericArg::Lifetime(lt) => self.ast_region_to_region(lt, None).into(),
+                    GenericArg::Type(ty) => self.ast_ty_to_ty(ty).into(),
+                    GenericArg::Const(ct) => ty::Const::from_opt_const_arg_anon_const(
+                        tcx,
+                        ty::WithOptConstParam {
+                            did: tcx.hir().local_def_id(ct.value.hir_id),
+                            const_param_did: Some(def_id),
+                        },
+                    )
+                    .into(),
+                    _ => {
+                        bug!("Generic argument {:?} should have been inferred already", generic_arg)
+                    }
+                })
+                .collect();
+
+            let ty = tcx.mk_opaque(def_id, tcx.intern_substs(&substs));
+            debug!("impl_trait_ty_to_ty: {}", ty);
+            return ty;
+        }
 
         let generics = tcx.generics_of(def_id);
 
@@ -2713,7 +2738,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
             if let Some(i) = (param.index as usize).checked_sub(generics.parent_count) {
                 // Our own parameters are the resolved lifetimes.
                 if let GenericParamDefKind::Lifetime = param.kind {
-                    if let hir::GenericArg::Lifetime(lifetime) = &lifetimes[i] {
+                    if let hir::GenericArg::Lifetime(lifetime) = &generic_args[i] {
                         self.ast_region_to_region(lifetime, None).into()
                     } else {
                         bug!()
