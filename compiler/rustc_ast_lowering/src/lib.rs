@@ -1999,7 +1999,29 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     #[instrument(level = "trace", skip(self))]
     fn lower_generic_param(&mut self, param: &GenericParam) -> hir::GenericParam<'hir> {
-        let (name, kind) = match param.kind {
+        let (name, kind) = self.lower_generic_param_kind(param);
+        let name = match name {
+            hir::ParamName::Plain(ident) => hir::ParamName::Plain(self.lower_ident(ident)),
+            name => name,
+        };
+
+        let hir_id = self.lower_node_id(param.id);
+        self.lower_attrs(hir_id, &param.attrs);
+        hir::GenericParam {
+            hir_id,
+            name,
+            span: self.lower_span(param.span()),
+            pure_wrt_drop: self.sess.contains_name(&param.attrs, sym::may_dangle),
+            kind,
+            colon_span: param.colon_span.map(|s| self.lower_span(s)),
+        }
+    }
+
+    fn lower_generic_param_kind(
+        &mut self,
+        param: &GenericParam,
+    ) -> (hir::ParamName, hir::GenericParamKind<'hir>) {
+        match param.kind {
             GenericParamKind::Lifetime => {
                 let param_name = if param.ident.name == kw::StaticLifetime
                     || param.ident.name == kw::UnderscoreLifetime
@@ -2032,21 +2054,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     hir::GenericParamKind::Const { ty, default },
                 )
             }
-        };
-        let name = match name {
-            hir::ParamName::Plain(ident) => hir::ParamName::Plain(self.lower_ident(ident)),
-            name => name,
-        };
-
-        let hir_id = self.lower_node_id(param.id);
-        self.lower_attrs(hir_id, &param.attrs);
-        hir::GenericParam {
-            hir_id,
-            name,
-            span: self.lower_span(param.span()),
-            pure_wrt_drop: self.sess.contains_name(&param.attrs, sym::may_dangle),
-            kind,
-            colon_span: param.colon_span.map(|s| self.lower_span(s)),
         }
     }
 
