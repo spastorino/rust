@@ -1667,12 +1667,24 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             })
         });
 
-        let type_const_args = self
+        let lifetime_args: Vec<_> = collected_lifetimes
+            .into_iter()
+            .map(|(_, (span, _, p_name, res))| {
+                let id = self.resolver.next_node_id();
+                let ident = Ident::new(p_name.ident().name, span);
+                let l = self.new_named_lifetime_with_res(id, span, ident, res);
+                hir::GenericArg::Lifetime(l)
+            })
+            .collect();
+
+        let type_const_args = self.collect_type_and_const_args(ast_generic_params);
+
+        let generic_args = self
             .arena
-            .alloc_from_iter(self.collect_type_and_const_args(ast_generic_params).into_iter());
+            .alloc_from_iter(lifetime_args.into_iter().chain(type_const_args.into_iter()));
 
         // `impl Trait` now just becomes `Foo<'a, 'b, ..>`.
-        hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, type_const_args)
+        hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, generic_args)
     }
 
     /// Registers a new opaque type with the proper `NodeId`s and
