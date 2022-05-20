@@ -23,7 +23,7 @@ use rustc_hir::def::{CtorOf, DefKind, Namespace, Res};
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::intravisit::{walk_generics, Visitor as _};
 use rustc_hir::lang_items::LangItem;
-use rustc_hir::{GenericArg, GenericArgs};
+use rustc_hir::{GenericArg, GenericArgs, OpaqueTyOrigin};
 use rustc_middle::ty::subst::{self, GenericArgKind, InternalSubsts, Subst, SubstsRef};
 use rustc_middle::ty::GenericParamDefKind;
 use rustc_middle::ty::{self, Const, DefIdTree, Ty, TyCtxt, TypeFoldable};
@@ -2402,16 +2402,9 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 let def_id = item_id.def_id.to_def_id();
 
                 match opaque_ty.kind {
-                    hir::ItemKind::OpaqueTy(hir::OpaqueTy { origin, .. }) => self
-                        .impl_trait_ty_to_ty(
-                            def_id,
-                            lifetimes,
-                            matches!(
-                                origin,
-                                hir::OpaqueTyOrigin::FnReturn(..)
-                                    | hir::OpaqueTyOrigin::AsyncFn(..)
-                            ),
-                        ),
+                    hir::ItemKind::OpaqueTy(hir::OpaqueTy { origin, .. }) => {
+                        self.impl_trait_ty_to_ty(def_id, lifetimes, origin)
+                    }
                     ref i => bug!("`impl Trait` pointed to non-opaque type?? {:#?}", i),
                 }
             }
@@ -2486,7 +2479,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         &self,
         def_id: DefId,
         generic_args: &[hir::GenericArg<'_>],
-        replace_parent_lifetimes: bool,
+        origin: OpaqueTyOrigin,
     ) -> Ty<'tcx> {
         let tcx = self.tcx();
 
@@ -2543,7 +2536,12 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                     // For `impl Trait` in the types of statics, constants,
                     // locals and type aliases. These capture all parent
                     // lifetimes, so they can use their identity subst.
-                    GenericParamDefKind::Lifetime if replace_parent_lifetimes => {
+                    GenericParamDefKind::Lifetime
+                        if matches!(
+                            origin,
+                            hir::OpaqueTyOrigin::FnReturn(..) | hir::OpaqueTyOrigin::AsyncFn(..)
+                        ) =>
+                    {
                         tcx.lifetimes.re_static.into()
                     }
                     _ => tcx.mk_param_from_def(param),
