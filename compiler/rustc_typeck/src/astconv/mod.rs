@@ -2703,38 +2703,45 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
     ) -> Ty<'tcx> {
         let tcx = self.tcx();
 
-        if tcx.sess.features_untracked().return_position_impl_trait_v2 {
-            let substs: Vec<_> = generic_args
-                .iter()
-                .map(|generic_arg| match generic_arg {
-                    GenericArg::Lifetime(lt) => self.ast_region_to_region(lt, None).into(),
-                    GenericArg::Type(ty) => self.ast_ty_to_ty(ty).into(),
-                    GenericArg::Const(ct) => ty::Const::from_opt_const_arg_anon_const(
-                        tcx,
-                        ty::WithOptConstParam {
-                            did: tcx.hir().local_def_id(ct.value.hir_id),
-                            const_param_did: Some(def_id),
-                        },
-                    )
-                    .into(),
-                    _ => {
-                        bug!("Generic argument {:?} should have been inferred already", generic_arg)
-                    }
-                })
-                .collect();
-
-            let ty = tcx.mk_opaque(def_id, tcx.intern_substs(&substs));
-            debug!("impl_trait_ty_to_ty: {}", ty);
-            return ty;
+        match origin {
+            hir::OpaqueTyOrigin::FnReturn(..)
+                if tcx.sess.features_untracked().return_position_impl_trait_v2 =>
+            {
+                let params = &self.tcx().generics_of(def_id).params;
+                assert_eq!(params.len(), generic_args.len());
+                let substs: Vec<_> = generic_args
+                    .iter()
+                    .zip(params)
+                    .map(|(generic_arg, param)| match generic_arg {
+                        GenericArg::Lifetime(lt) => self.ast_region_to_region(lt, None).into(),
+                        GenericArg::Type(ty) => self.ast_ty_to_ty(ty).into(),
+                        GenericArg::Const(ct) => ty::Const::from_opt_const_arg_anon_const(
+                            tcx,
+                            ty::WithOptConstParam {
+                                did: tcx.hir().local_def_id(ct.value.hir_id),
+                                const_param_did: Some(param.def_id),
+                            },
+                        )
+                        .into(),
+                        _ => {
+                            bug!(
+                                "Generic argument {:?} should have been inferred already",
+                                generic_arg
+                            )
+                        }
+                    })
+                    .collect();
+                let ty = tcx.mk_opaque(def_id, tcx.intern_substs(&substs));
+                debug!(?ty);
+                return ty;
+            }
+            _ => {}
         }
 
         let generics = tcx.generics_of(def_id);
 
         debug!("impl_trait_ty_to_ty: generics={:?}", generics);
         let substs = InternalSubsts::for_item(tcx, def_id, |param, _| {
-            if tcx.sess.features_untracked().return_position_impl_trait_v2 {
-                return tcx.mk_param_from_def(param);
-            }
             if let Some(i) = (param.index as usize).checked_sub(generics.parent_count) {
                 // Our own parameters are the resolved lifetimes.
                 if let GenericParamDefKind::Lifetime = param.kind {
