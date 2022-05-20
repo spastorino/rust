@@ -20,7 +20,6 @@ use rustc_span::symbol::{kw, sym, Ident};
 use rustc_span::Span;
 use rustc_target::spec::abi;
 use smallvec::{smallvec, SmallVec};
-use tracing::debug;
 
 use std::iter;
 
@@ -118,6 +117,7 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
         self.owners[def_id]
     }
 
+    #[instrument(level = "debug", skip(self, c))]
     fn lower_crate(&mut self, c: &Crate) {
         debug_assert_eq!(self.resolver.local_def_id(CRATE_NODE_ID), CRATE_DEF_ID);
 
@@ -128,6 +128,7 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
         })
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn lower_item(&mut self, item: &Item) {
         self.with_lctx(item.id, |lctx| hir::OwnerNode::Item(lctx.lower_item(item)))
     }
@@ -484,6 +485,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         (ty, self.lower_const_body(span, body))
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn lower_use_tree(
         &mut self,
         tree: &UseTree,
@@ -493,8 +495,6 @@ impl<'hir> LoweringContext<'_, 'hir> {
         ident: &mut Ident,
         attrs: Option<&'hir [Attribute]>,
     ) -> hir::ItemKind<'hir> {
-        debug!("lower_use_tree(tree={:?})", tree);
-
         let path = &tree.prefix;
         let segments = prefix.segments.iter().chain(path.segments.iter()).cloned().collect();
 

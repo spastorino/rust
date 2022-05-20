@@ -38,6 +38,9 @@
 #![recursion_limit = "256"]
 #![allow(rustc::potential_query_instability)]
 
+#[macro_use]
+extern crate tracing;
+
 use rustc_ast::tokenstream::{CanSynthesizeMissingTokens, TokenStream};
 use rustc_ast::visit;
 use rustc_ast::{self as ast, *};
@@ -66,7 +69,6 @@ use rustc_span::{Span, DUMMY_SP};
 
 use smallvec::SmallVec;
 use std::collections::hash_map::Entry;
-use tracing::{debug, trace};
 
 macro_rules! arena_vec {
     ($this:expr; $($x:expr),*) => (
@@ -464,7 +466,7 @@ pub fn lower_crate<'a, 'hir>(
     arena.alloc(krate)
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 enum ParamMode {
     /// Any path in a type context.
     Explicit,
@@ -480,6 +482,7 @@ enum ParenthesizedGenericArgs {
 }
 
 impl<'a, 'hir> LoweringContext<'a, 'hir> {
+    #[instrument(level = "debug", skip(self, f))]
     fn with_hir_id_owner(
         &mut self,
         owner: NodeId,
@@ -617,12 +620,15 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.lower_node_id(node_id)
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn lower_res(&mut self, res: Res<NodeId>) -> Res {
         let res: Result<Res, ()> = res.apply_id(|id| {
             let owner = self.current_hir_id_owner;
             let local_id = self.node_id_to_local_id.get(&id).copied().ok_or(())?;
             Ok(hir::HirId { owner, local_id })
         });
+        trace!(?res);
+
         // We may fail to find a HirId when the Res points to a Local from an enclosing HIR owner.
         // This can happen when trying to lower the return type `x` in erroneous code like
         //   async fn foo(x: u8) -> x {}
@@ -713,6 +719,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Creates a new `hir::GenericParam` for every new `Fresh` lifetime and
     /// universal `impl Trait` type parameter encountered while evaluating `f`.
     /// Definitions are created with the provided `parent_def_id`.
+    #[instrument(level = "debug", skip(self, f))]
     fn add_implicit_generics<T>(
         &mut self,
         generics: &Generics,
@@ -928,6 +935,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// ```
     ///
     /// returns a `hir::TypeBinding` representing `Item`.
+    #[instrument(level = "debug", skip(self))]
     fn lower_assoc_ty_constraint(
         &mut self,
         constraint: &AssocConstraint,
@@ -1066,6 +1074,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         }
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn lower_generic_arg(
         &mut self,
         arg: &ast::GenericArg,
@@ -1136,6 +1145,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         }
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn lower_ty(&mut self, t: &Ty, itctx: ImplTraitContext<'_, 'hir>) -> &'hir hir::Ty<'hir> {
         self.arena.alloc(self.lower_ty_direct(t, itctx))
     }
@@ -1854,6 +1864,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         )
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn lower_param_bound(
         &mut self,
         tpb: &GenericBound,
@@ -1986,6 +1997,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.arena.alloc_from_iter(self.lower_generic_params_mut(params))
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn lower_generic_param(&mut self, param: &GenericParam) -> hir::GenericParam<'hir> {
         let (name, kind) = match param.kind {
             GenericParamKind::Lifetime => {
