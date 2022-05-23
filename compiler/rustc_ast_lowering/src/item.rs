@@ -276,7 +276,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                                 &decl,
                                 Some((id, idty, idpb)),
                                 FnDeclKind::Fn,
-                                &generics.params,
+                                generics,
                                 ret_id,
                             )
                         });
@@ -664,7 +664,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                                     fdec,
                                     None,
                                     FnDeclKind::ExternFn,
-                                    &generics.params,
+                                    generics,
                                     None,
                                 ),
                                 this.lower_fn_params_to_names(fdec),
@@ -1245,7 +1245,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
     ) -> (&'hir hir::Generics<'hir>, hir::FnSig<'hir>) {
         let header = self.lower_fn_header(sig.header);
         let (generics, decl) = self.add_implicit_generics(generics, id, |this, idty, idpb| {
-            this.lower_fn_decl(&sig.decl, Some((id, idty, idpb)), kind, &generics.params, is_async)
+            this.lower_fn_decl(&sig.decl, Some((id, idty, idpb)), kind, generics, is_async)
         });
         (generics, hir::FnSig { header, decl, span: self.lower_span(sig.span) })
     }
