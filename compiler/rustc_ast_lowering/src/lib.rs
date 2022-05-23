@@ -1586,11 +1586,42 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 let generic_params =
                     lifetime_params.into_iter().chain(type_const_params.into_iter());
 
+                let mut predicates: Vec<_> = ast_generics
+                    .params
+                    .iter()
+                    .filter_map(|param| {
+                        let bounds = lctx.lower_param_bounds(
+                            &param.bounds,
+                            ImplTraitContext::ReturnPositionOpaqueTy {
+                                origin,
+                                generics: ast_generics,
+                            },
+                        );
+                        lctx.lower_generic_bound_predicate(
+                            param.ident,
+                            param.id,
+                            &param.kind,
+                            bounds,
+                            hir::PredicateOrigin::GenericParam,
+                        )
+                    })
+                    .collect();
+
+                predicates.extend(
+                    ast_generics
+                        .where_clause
+                        .predicates
+                        .iter()
+                        .map(|predicate| lctx.lower_where_predicate(predicate)),
+                );
+
+                let has_where_clause = !predicates.is_empty();
+
                 let opaque_ty_item = hir::OpaqueTy {
                     generics: self.arena.alloc(hir::Generics {
                         params: self.arena.alloc_from_iter(generic_params),
-                        predicates: &[],
-                        has_where_clause: false,
+                        predicates: self.arena.alloc_from_iter(predicates),
+                        has_where_clause,
                         where_clause_span: lctx.lower_span(span),
                         span: lctx.lower_span(span),
                     }),
