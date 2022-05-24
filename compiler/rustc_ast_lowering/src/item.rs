@@ -85,6 +85,7 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
             task_context: None,
             current_item: None,
             captured_lifetimes: None,
+            in_scope_lifetime_bounds: None,
             generics_def_id_map: FxHashMap::default(),
             allow_try_trait: Some([sym::try_trait_v2, sym::yeet_desugar_details][..].into()),
             allow_gen_future: Some([sym::gen_future][..].into()),

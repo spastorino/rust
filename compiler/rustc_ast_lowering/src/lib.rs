@@ -126,6 +126,8 @@ struct LoweringContext<'a, 'hir: 'a> {
     /// Used to handle lifetimes appearing in impl-traits.
     captured_lifetimes: Option<LifetimeCaptureContext>,
 
+    in_scope_lifetime_bounds: Option<Vec<ParamName>>,
+
     /// Used to map to the right def_id on generic parameters that are copied from the containing
     /// function into an inner type (e.g. impl trait).
     generics_def_id_map: FxHashMap<DefId, DefId>,
@@ -531,6 +533,14 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let current_map = std::mem::take(&mut self.generics_def_id_map);
         let result = f(self);
         self.generics_def_id_map = current_map;
+        result
+    }
+
+    #[instrument(level = "debug", skip(self, f))]
+    fn with_in_scope_lifetime_bounds<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let current_lifetime_bounds = std::mem::take(&mut self.in_scope_lifetime_bounds);
+        let result = f(self);
+        self.in_scope_lifetime_bounds = current_lifetime_bounds;
         result
     }
 
@@ -1658,10 +1668,13 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 let generic_params =
                     lifetime_params.into_iter().chain(type_const_params.into_iter());
 
-                let mut predicates: Vec<_> = ast_generics
-                    .params
-                    .iter()
-                    .filter_map(|param| {
+                let mut predicates = Vec::new();
+                lctx.with_in_scope_lifetime_bounds(|lctx| {
+                    lctx.in_scope_lifetime_bounds = Some(
+                        collected_lifetimes.iter().map(|(_, &(_, _, p_name, _))| p_name).collect(),
+                    );
+
+                    predicates.extend(ast_generics.params.iter().filter_map(|param| {
                         let bounds = lctx.lower_param_bounds(
                             &param.bounds,
                             ImplTraitContext::ReturnPositionOpaqueTy {
@@ -1676,16 +1689,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             bounds,
                             hir::PredicateOrigin::GenericParam,
                         )
-                    })
-                    .collect();
+                    }));
 
-                predicates.extend(
-                    ast_generics
-                        .where_clause
-                        .predicates
-                        .iter()
-                        .map(|predicate| lctx.lower_where_predicate(predicate)),
-                );
+                    predicates.extend(
+                        ast_generics
+                            .where_clause
+                            .predicates
+                            .iter()
+                            .map(|predicate| lctx.lower_where_predicate(predicate)),
+                    );
+                });
 
                 let has_where_clause = !predicates.is_empty();
 
@@ -2163,27 +2176,39 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             LifetimeRes::Param { param, binder } => {
                 debug_assert_ne!(ident.name, kw::UnderscoreLifetime);
                 let p_name = ParamName::Plain(ident);
-                if let Some(LifetimeCaptureContext { parent_def_id, captures, binders_to_ignore }) =
-                    &mut self.captured_lifetimes
-                    && !binders_to_ignore.contains(&binder)
-                {
-                    match captures.entry(param) {
-                        Entry::Occupied(_) => {}
-                        Entry::Vacant(v) => {
-                            let p_id = self.resolver.next_node_id();
-                            self.resolver.create_def(
-                                *parent_def_id,
-                                p_id,
-                                DefPathData::LifetimeNs(p_name.ident().name),
-                                ExpnId::root(),
-                                span.with_parent(None),
-                            );
+                match &self.in_scope_lifetime_bounds {
+                    Some(lifetime_bounds)
+                        if lifetime_bounds
+                            .iter()
+                            .find(|&lifetime| *lifetime == p_name)
+                            .is_none() =>
+                    {
+                        hir::LifetimeName::Static
+                    }
+                    _ => {
+                        if let Some(LifetimeCaptureContext { parent_def_id, captures, binders_to_ignore }) =
+                            &mut self.captured_lifetimes
+                            && !binders_to_ignore.contains(&binder)
+                        {
+                            match captures.entry(param) {
+                                Entry::Occupied(_) => {}
+                                Entry::Vacant(v) => {
+                                    let p_id = self.resolver.next_node_id();
+                                    self.resolver.create_def(
+                                        *parent_def_id,
+                                        p_id,
+                                        DefPathData::LifetimeNs(p_name.ident().name),
+                                        ExpnId::root(),
+                                        span.with_parent(None),
+                                    );
 
-                            v.insert((span, p_id, p_name, res));
+                                    v.insert((span, p_id, p_name, res));
+                                }
+                            }
                         }
+                        hir::LifetimeName::Param(p_name)
                     }
                 }
-                hir::LifetimeName::Param(p_name)
             }
             LifetimeRes::Fresh { mut param, binder } => {
                 debug_assert_eq!(ident.name, kw::UnderscoreLifetime);
