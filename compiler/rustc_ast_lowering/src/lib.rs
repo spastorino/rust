@@ -130,7 +130,7 @@ struct LoweringContext<'a, 'hir: 'a> {
 
     /// Used to map to the right def_id on generic parameters that are copied from the containing
     /// function into an inner type (e.g. impl trait).
-    generics_def_id_map: FxHashMap<DefId, DefId>,
+    generics_def_id_map: FxHashMap<LocalDefId, LocalDefId>,
 
     current_hir_id_owner: LocalDefId,
     item_local_id_counter: hir::ItemLocalId,
@@ -626,12 +626,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                 assert_ne!(local_id, hir::ItemLocalId::new(0));
                 if let Some(def_id) = self.resolver.opt_local_def_id(ast_node_id) {
-                    let def_id = def_id.to_def_id();
                     let def_id = self.generics_def_id_map.get(&def_id).unwrap_or(&def_id);
-                    let def_id = def_id.as_local().unwrap();
                     // Do not override a `MaybeOwner::Owner` that may already here.
-                    self.children.entry(def_id).or_insert(hir::MaybeOwner::NonOwner(hir_id));
-                    self.local_id_to_def_id.insert(local_id, def_id);
+                    self.children.entry(*def_id).or_insert(hir::MaybeOwner::NonOwner(hir_id));
+                    self.local_id_to_def_id.insert(local_id, *def_id);
                 }
 
                 if let Some(traits) = self.resolver.take_trait_map(ast_node_id) {
@@ -650,8 +648,13 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     #[instrument(level = "trace", skip(self))]
     fn lower_res(&mut self, res: Res<NodeId>) -> Res {
-        let res =
-            res.map_def_id(|def_id| *self.generics_def_id_map.get(&def_id).unwrap_or(&def_id));
+        let res = res.map_def_id(|def_id| {
+            if let Some(local_def_id) = def_id.as_local() {
+                self.generics_def_id_map.get(&local_def_id).unwrap_or(&local_def_id).to_def_id()
+            } else {
+                def_id
+            }
+        });
         trace!(?res, "from remapping");
 
         let res: Result<Res, ()> = res.apply_id(|id| {
@@ -814,7 +817,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     param.span().with_parent(None),
                 );
 
-                self.generics_def_id_map.insert(orig_def_id.to_def_id(), new_def_id.to_def_id());
+                self.generics_def_id_map.insert(orig_def_id, new_def_id);
                 trace!(?orig_def_id, ?new_def_id, "recording remapping");
 
                 self.lower_generic_param(&param)
@@ -836,7 +839,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             .map(|param| {
                 let span = param.span();
                 let local_def_id = self.resolver.local_def_id(param.id);
-                let def_id = local_def_id.to_def_id();
+                let def_id = self.generics_def_id_map.get(&local_def_id).unwrap_or(&local_def_id).to_def_id();
 
                 match param.kind {
                     GenericParamKind::Lifetime => {
@@ -850,7 +853,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             self.arena.alloc(hir::Path {
                                 res: Res::Def(
                                     DefKind::TyParam,
-                                    *self.generics_def_id_map.get(&def_id).unwrap_or(&def_id),
+                                    def_id,
                                 ),
                                 span,
                                 segments: arena_vec![self; hir::PathSegment::from_ident(self.lower_ident(param.ident))],
@@ -860,7 +863,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     GenericParamKind::Const { .. } => {
                         let parent_def_id = self.current_hir_id_owner;
                         let node_id = self.resolver.next_node_id();
-                        let const_def_id = *self.generics_def_id_map.get(&def_id).unwrap_or(&def_id);
                         self.resolver.create_def(
                             parent_def_id,
                             node_id,
@@ -883,7 +885,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                             this.arena.alloc(hir::Path {
                                                 res: Res::Def(
                                                     DefKind::ConstParam,
-                                                    const_def_id,
+                                                    def_id,
                                                 ),
                                                 span,
                                                 segments: arena_vec![this; hir::PathSegment::from_ident(this.lower_ident(param.ident))],
