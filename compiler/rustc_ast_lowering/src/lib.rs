@@ -41,6 +41,7 @@
 #[macro_use]
 extern crate tracing;
 
+use def_id_remapper::DefIdRemapper;
 use rustc_ast::tokenstream::{CanSynthesizeMissingTokens, TokenStream};
 use rustc_ast::visit;
 use rustc_ast::{self as ast, *};
@@ -78,6 +79,7 @@ macro_rules! arena_vec {
 
 mod asm;
 mod block;
+mod def_id_remapper;
 mod expr;
 mod index;
 mod item;
@@ -90,7 +92,7 @@ struct LoweringContext<'a, 'hir: 'a> {
     /// Used to assign IDs to HIR nodes that do not directly correspond to AST nodes.
     sess: &'a Session,
 
-    resolver: &'a mut dyn ResolverAstLowering,
+    resolver: DefIdRemapper<'a>,
 
     /// HACK(Centril): there is a cyclic dependency between the parser and lowering
     /// if we don't have this function pointer. To avoid that dependency so that
@@ -127,10 +129,6 @@ struct LoweringContext<'a, 'hir: 'a> {
     captured_lifetimes: Option<LifetimeCaptureContext>,
 
     in_scope_lifetime_bounds: Option<Vec<ParamName>>,
-
-    /// Used to map to the right def_id on generic parameters that are copied from the containing
-    /// function into an inner type (e.g. impl trait).
-    generics_def_id_map: FxHashMap<LocalDefId, LocalDefId>,
 
     current_hir_id_owner: LocalDefId,
     item_local_id_counter: hir::ItemLocalId,
@@ -508,6 +506,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let current_owner = std::mem::replace(&mut self.current_hir_id_owner, def_id);
         let current_local_counter =
             std::mem::replace(&mut self.item_local_id_counter, hir::ItemLocalId::new(1));
+        let current_resolver_maps = self.resolver.take_maps();
 
         // Always allocate the first `HirId` for the owner itself.
         let _old = self.node_id_to_local_id.insert(owner, hir::ItemLocalId::new(0));
@@ -524,15 +523,17 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.trait_map = current_trait_map;
         self.current_hir_id_owner = current_owner;
         self.item_local_id_counter = current_local_counter;
+        self.resolver.restore_maps(current_resolver_maps);
 
         let _old = self.children.insert(def_id, hir::MaybeOwner::Owner(info));
         debug_assert!(_old.is_none())
     }
 
+    /// Push a fresh "remapping" onto the name resolver.
     fn with_fresh_generics_def_id_map<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
-        let current_map = std::mem::take(&mut self.generics_def_id_map);
+        self.resolver.push_map();
         let result = f(self);
-        self.generics_def_id_map = current_map;
+        self.resolver.pop_map();
         result
     }
 
@@ -626,10 +627,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                 assert_ne!(local_id, hir::ItemLocalId::new(0));
                 if let Some(def_id) = self.resolver.opt_local_def_id(ast_node_id) {
-                    let def_id = self.generics_def_id_map.get(&def_id).unwrap_or(&def_id);
                     // Do not override a `MaybeOwner::Owner` that may already here.
-                    self.children.entry(*def_id).or_insert(hir::MaybeOwner::NonOwner(hir_id));
-                    self.local_id_to_def_id.insert(local_id, *def_id);
+                    self.children.entry(def_id).or_insert(hir::MaybeOwner::NonOwner(hir_id));
+                    self.local_id_to_def_id.insert(local_id, def_id);
                 }
 
                 if let Some(traits) = self.resolver.take_trait_map(ast_node_id) {
@@ -650,7 +650,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_res(&mut self, res: Res<NodeId>) -> Res {
         let res = res.map_def_id(|def_id| {
             if let Some(local_def_id) = def_id.as_local() {
-                self.generics_def_id_map.get(&local_def_id).unwrap_or(&local_def_id).to_def_id()
+                self.resolver.remap(local_def_id).to_def_id()
             } else {
                 def_id
             }
@@ -795,7 +795,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Collect a "to be lowered" copy of each type and const generic parameter, skipping
     /// lifetimes.
     #[instrument(level = "debug", skip(self))]
-    fn collect_type_and_const_params(
+    fn remap_type_and_const_params(
         &mut self,
         parent_def_id: LocalDefId,
         params: &[GenericParam],
@@ -817,10 +817,28 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     param.span().with_parent(None),
                 );
 
-                self.generics_def_id_map.insert(orig_def_id, new_def_id);
+                self.resolver.add_remapping(orig_def_id, new_def_id);
                 trace!(?orig_def_id, ?new_def_id, "recording remapping");
 
-                self.lower_generic_param(&param)
+                let (name, kind) = self.lower_generic_param_kind(param);
+
+                let name = if let ParamName::Plain(ident) = name {
+                    let s = format!("MY-{}", ident.name);
+                    ParamName::Plain(Ident::from_str_and_span(&s, ident.span))
+                } else {
+                    name
+                };
+
+                let hir_id = self.lower_node_id(param.id);
+                self.lower_attrs(hir_id, &param.attrs);
+                hir::GenericParam {
+                    hir_id,
+                    name,
+                    span: self.lower_span(param.span()),
+                    pure_wrt_drop: self.sess.contains_name(&param.attrs, sym::may_dangle),
+                    kind,
+                    colon_span: param.colon_span.map(|s| self.lower_span(s)),
+                }
             })
             .collect()
     }
@@ -839,7 +857,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             .map(|param| {
                 let span = param.span();
                 let local_def_id = self.resolver.local_def_id(param.id);
-                let def_id = self.generics_def_id_map.get(&local_def_id).unwrap_or(&local_def_id).to_def_id();
+                let def_id = local_def_id.to_def_id();
 
                 match param.kind {
                     GenericParamKind::Lifetime => {
@@ -1625,48 +1643,48 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         let mut collected_lifetimes = FxHashMap::default();
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
+            let hir_bounds = if origin == hir::OpaqueTyOrigin::TyAlias {
+                lower_bounds(lctx)
+            } else {
+                lctx.while_capturing_lifetimes(
+                    opaque_ty_def_id,
+                    &mut collected_lifetimes,
+                    lower_bounds,
+                )
+            };
+            debug!(?collected_lifetimes);
+
+            let lifetime_params: Vec<_> = collected_lifetimes
+                .iter()
+                .map(|(_, &(span, p_id, p_name, _))| {
+                    let hir_id = lctx.lower_node_id(p_id);
+                    debug_assert_ne!(lctx.resolver.opt_local_def_id(p_id), None);
+
+                    let kind = if p_name.ident().name == kw::UnderscoreLifetime {
+                        hir::LifetimeParamKind::Elided
+                    } else {
+                        hir::LifetimeParamKind::Explicit
+                    };
+
+                    hir::GenericParam {
+                        hir_id,
+                        name: p_name,
+                        span,
+                        pure_wrt_drop: false,
+                        kind: hir::GenericParamKind::Lifetime { kind },
+                        colon_span: None,
+                    }
+                })
+                .collect();
+
+            debug!(?lifetime_params);
+
+            let type_const_params =
+                lctx.remap_type_and_const_params(opaque_ty_def_id, &ast_generics.params);
+
+            debug!(?type_const_params);
+
             lctx.with_fresh_generics_def_id_map(|lctx| {
-                let hir_bounds = if origin == hir::OpaqueTyOrigin::TyAlias {
-                    lower_bounds(lctx)
-                } else {
-                    lctx.while_capturing_lifetimes(
-                        opaque_ty_def_id,
-                        &mut collected_lifetimes,
-                        lower_bounds,
-                    )
-                };
-                debug!(?collected_lifetimes);
-
-                let lifetime_params: Vec<_> = collected_lifetimes
-                    .iter()
-                    .map(|(_, &(span, p_id, p_name, _))| {
-                        let hir_id = lctx.lower_node_id(p_id);
-                        debug_assert_ne!(lctx.resolver.opt_local_def_id(p_id), None);
-
-                        let kind = if p_name.ident().name == kw::UnderscoreLifetime {
-                            hir::LifetimeParamKind::Elided
-                        } else {
-                            hir::LifetimeParamKind::Explicit
-                        };
-
-                        hir::GenericParam {
-                            hir_id,
-                            name: p_name,
-                            span,
-                            pure_wrt_drop: false,
-                            kind: hir::GenericParamKind::Lifetime { kind },
-                            colon_span: None,
-                        }
-                    })
-                    .collect();
-
-                debug!(?lifetime_params);
-
-                let type_const_params =
-                    lctx.collect_type_and_const_params(opaque_ty_def_id, &ast_generics.params);
-
-                debug!(?type_const_params);
-
                 let generic_params =
                     lifetime_params.into_iter().chain(type_const_params.into_iter());
 
@@ -1675,6 +1693,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     lctx.in_scope_lifetime_bounds = Some(
                         collected_lifetimes.iter().map(|(_, &(_, _, p_name, _))| p_name).collect(),
                     );
+
+                    debug!(?lctx.in_scope_lifetime_bounds);
 
                     predicates.extend(ast_generics.params.iter().filter_map(|param| {
                         let bounds = lctx.lower_param_bounds(
@@ -1693,6 +1713,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         )
                     }));
 
+                    debug!(?predicates);
+
                     predicates.extend(
                         ast_generics
                             .where_clause
@@ -1700,6 +1722,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             .iter()
                             .map(|predicate| lctx.lower_where_predicate(predicate)),
                     );
+
+                    debug!(?predicates);
                 });
 
                 let has_where_clause = !predicates.is_empty();

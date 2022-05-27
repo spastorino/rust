@@ -1,4 +1,4 @@
-use crate::ImplTraitPosition;
+use crate::{ImplTraitPosition, ResolverAstLowering};
 
 use super::{ImplTraitContext, LoweringContext, ParamMode};
 

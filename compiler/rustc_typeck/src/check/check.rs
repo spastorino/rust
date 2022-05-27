@@ -96,13 +96,21 @@ pub(super) fn check_fn<'a, 'tcx>(
 
     let declared_ret_ty = fn_sig.output();
 
-    let ret_ty =
-        fcx.register_infer_ok_obligations(fcx.infcx.replace_opaque_types_with_inference_vars(
-            declared_ret_ty,
-            body.value.hir_id,
-            DUMMY_SP,
-            param_env,
-        ));
+    debug!("check_fn: declared_ret_ty = {:?}", declared_ret_ty);
+
+    let opaque = fcx.infcx.replace_opaque_types_with_inference_vars(
+        declared_ret_ty,
+        body.value.hir_id,
+        DUMMY_SP,
+        param_env,
+    );
+
+    debug!("check_fn: opaque = {:?}", opaque);
+
+    let ret_ty = fcx.register_infer_ok_obligations(opaque);
+
+    debug!("check_fn: revealed_ret_ty = {:?}", ret_ty);
+
     // HACK(oli-obk): we rewrite the declared return type, too, so that we don't end up inferring all
     // unconstrained RPIT to have `()` as their hidden type. This would happen because further down we
     // compare the ret_coercion with declared_ret_ty, and anything uninferred would be inferred to the

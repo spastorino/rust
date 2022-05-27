@@ -1,5 +1,6 @@
 use super::{AstOwner, ImplTraitContext, ImplTraitPosition, ResolverAstLowering};
 use super::{LoweringContext, ParamMode};
+use crate::def_id_remapper::DefIdRemapper;
 use crate::{Arena, FnDeclKind};
 
 use rustc_ast::ptr::P;
@@ -61,7 +62,7 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
         let mut lctx = LoweringContext {
             // Pseudo-globals.
             sess: &self.sess,
-            resolver: self.resolver,
+            resolver: DefIdRemapper::new(self.resolver),
             nt_to_tokenstream: self.nt_to_tokenstream,
             arena: self.arena,
 
@@ -86,7 +87,6 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
             current_item: None,
             captured_lifetimes: None,
             in_scope_lifetime_bounds: None,
-            generics_def_id_map: FxHashMap::default(),
             allow_try_trait: Some([sym::try_trait_v2, sym::yeet_desugar_details][..].into()),
             allow_gen_future: Some([sym::gen_future][..].into()),
             allow_into_future: Some([sym::into_future][..].into()),
