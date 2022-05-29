@@ -524,6 +524,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     }
 
     /// Push a fresh "remapping" onto the name resolver.
+    #[tracing::instrument(level = "debug", skip(self, f))]
     fn with_fresh_generics_def_id_map<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         self.resolver.push_map();
         let result = f(self);

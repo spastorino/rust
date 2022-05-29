@@ -27,6 +27,7 @@ impl<'a> DefIdRemapper<'a> {
     }
 
     /// Push a remapping into the top-most map. Panics if no map has been pushed.
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn add_remapping(&mut self, from: LocalDefId, to: LocalDefId) {
         self.generics_def_id_map.last_mut().expect("no map pushed").insert(from, to);
     }
@@ -42,7 +43,10 @@ impl<'a> DefIdRemapper<'a> {
     pub fn remap(&self, mut local_def_id: LocalDefId) -> LocalDefId {
         for map in &self.generics_def_id_map {
             if let Some(r) = map.get(&local_def_id) {
+                debug!("def_id_remapper: remapping from `{local_def_id:?}` to `{r:?}`");
                 local_def_id = *r;
+            } else {
+                debug!("def_id_remapper: no remapping for `{local_def_id:?}` found in map");
             }
         }
 
