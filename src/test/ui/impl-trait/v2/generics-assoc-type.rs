@@ -6,9 +6,8 @@ trait MyTrait<T> {}
 
 impl<T> MyTrait<T> for T {}
 
-fn ident_as_my_trait<'a, T>(_u: &'a i32, t: T) -> impl MyTrait<T>
-where
-    'static: 'a,
+fn ident_as_my_trait<'a, T: 'a>(_u: &'a i32, t: T) -> impl MyTrait<T>
+// fn ident_as_my_trait<'a, T>(_u: &'a i32, t: T) -> Opaque<T1>: MyTrait<T1> where 'static: 'static
 {
     t
 }

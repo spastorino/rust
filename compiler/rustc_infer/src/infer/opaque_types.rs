@@ -49,8 +49,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         param_env: ty::ParamEnv<'tcx>,
     ) -> InferOk<'tcx, T> {
         if !value.has_opaque_types() {
+            debug!("replace_opaque_types_with_inference_vars: value.has_opaque_types()=false");
             return InferOk { value, obligations: vec![] };
         }
+        debug!("replace_opaque_types_with_inference_vars: value.has_opaque_types()=true");
         let mut obligations = vec![];
         let value = value.fold_with(&mut ty::fold::BottomUpFolder {
             tcx: self.tcx,
@@ -67,17 +69,22 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                         Some(OpaqueTyOrigin::FnReturn(..))
                     ) =>
                 {
+                    debug!("replace_opaque_types_with_inference_vars: 1");
                     let span = if span.is_dummy() { self.tcx.def_span(def_id) } else { span };
+                    debug!("replace_opaque_types_with_inference_vars: 2");
                     let cause = ObligationCause::misc(span, body_id);
+                    debug!("replace_opaque_types_with_inference_vars: 3");
                     let ty_var = self.next_ty_var(TypeVariableOrigin {
                         kind: TypeVariableOriginKind::TypeInference,
                         span: cause.span,
                     });
+                    debug!("replace_opaque_types_with_inference_vars: 4");
                     obligations.extend(
                         self.handle_opaque_type(ty, ty_var, true, &cause, param_env)
                             .unwrap()
                             .obligations,
                     );
+                    debug!("replace_opaque_types_with_inference_vars: 5");
                     ty_var
                 }
                 _ => ty,
@@ -165,6 +172,8 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                                 .emit();
                     }
                 }
+                debug!("HERE def_id: {:?}", def_id);
+                debug!("HERE substs: {:?}", substs);
                 Some(self.register_hidden_type(
                     OpaqueTypeKey { def_id, substs },
                     cause.clone(),
@@ -567,9 +576,11 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         }
 
         let item_bounds = tcx.bound_explicit_item_bounds(def_id);
+        debug!("HERE: item_bounds={:?}", item_bounds);
 
         for predicate in item_bounds.transpose_iter().map(|e| e.map_bound(|(p, _)| *p)) {
             debug!(?predicate);
+            debug!(?substs);
             let predicate = predicate.subst(tcx, substs);
 
             let predicate = predicate.fold_with(&mut BottomUpFolder {

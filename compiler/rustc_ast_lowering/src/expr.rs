@@ -1,4 +1,4 @@
-use crate::{FnDeclKind, ImplTraitPosition};
+use crate::{FnDeclKind, ImplTraitPosition, ResolverAstLowering};
 
 use super::{ImplTraitContext, LoweringContext, ParamMode, ParenthesizedGenericArgs};
 
