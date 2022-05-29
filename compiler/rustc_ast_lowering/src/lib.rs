@@ -1573,6 +1573,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let mut collected_lifetimes = FxHashMap::default();
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
             lctx.with_fresh_generics_def_id_map(|lctx| {
+                let type_const_params =
+                    lctx.remap_type_and_const_params(opaque_ty_def_id, &ast_generics.params);
+
+                debug!(?type_const_params);
+
                 let hir_bounds = if origin == hir::OpaqueTyOrigin::TyAlias {
                     lower_bounds(lctx)
                 } else {
@@ -1608,11 +1613,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     .collect();
 
                 debug!(?lifetime_params);
-
-                let type_const_params =
-                    lctx.remap_type_and_const_params(opaque_ty_def_id, &ast_generics.params);
-
-                debug!(?type_const_params);
 
                 let generic_params =
                     lifetime_params.into_iter().chain(type_const_params.into_iter());
