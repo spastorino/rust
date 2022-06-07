@@ -83,7 +83,6 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
             task_context: None,
             current_item: None,
             captured_lifetimes: None,
-            impl_trait_defs: Vec::new(),
             impl_trait_bounds: Vec::new(),
             allow_try_trait: Some([sym::try_trait_v2, sym::yeet_desugar_details][..].into()),
             allow_gen_future: Some([sym::gen_future][..].into()),
@@ -266,7 +265,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     let body_id =
                         this.lower_maybe_async_body(span, &decl, asyncness, body.as_deref());
 
-                    let itctx = ImplTraitContext::Universal;
+                    let itctx = ImplTraitContext::Universal { impl_trait_defs: &mut Vec::new() };
                     let (generics, decl) = this.lower_generics(generics, id, itctx, |this| {
                         let ret_id = asyncness.opt_return_id();
                         this.lower_fn_decl(&decl, Some(id), FnDeclKind::Fn, ret_id)
@@ -385,7 +384,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 // method, it will not be considered an in-band
                 // lifetime to be added, but rather a reference to a
                 // parent lifetime.
-                let itctx = ImplTraitContext::Universal;
+                let itctx = ImplTraitContext::Universal { impl_trait_defs: &mut Vec::new() };
                 let (generics, (trait_ref, lowered_ty)) =
                     self.lower_generics(ast_generics, id, itctx, |this| {
                         let trait_ref = trait_ref.as_ref().map(|trait_ref| {
@@ -655,7 +654,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
             kind: match i.kind {
                 ForeignItemKind::Fn(box Fn { ref sig, ref generics, .. }) => {
                     let fdec = &sig.decl;
-                    let itctx = ImplTraitContext::Universal;
+                    let itctx = ImplTraitContext::Universal { impl_trait_defs: &mut Vec::new() };
                     let (generics, (fn_dec, fn_args)) =
                         self.lower_generics(generics, i.id, itctx, |this| {
                             (
@@ -1237,7 +1236,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         is_async: Option<NodeId>,
     ) -> (&'hir hir::Generics<'hir>, hir::FnSig<'hir>) {
         let header = self.lower_fn_header(sig.header);
-        let itctx = ImplTraitContext::Universal;
+        let itctx = ImplTraitContext::Universal { impl_trait_defs: &mut Vec::new() };
         let (generics, decl) = self.lower_generics(generics, id, itctx, |this| {
             this.lower_fn_decl(&sig.decl, Some(id), kind, is_async)
         });
@@ -1302,10 +1301,9 @@ impl<'hir> LoweringContext<'_, 'hir> {
         &mut self,
         generics: &Generics,
         parent_node_id: NodeId,
-        mut itctx: ImplTraitContext,
+        mut itctx: ImplTraitContext<'_, 'hir>,
         f: impl FnOnce(&mut Self) -> T,
     ) -> (&'hir hir::Generics<'hir>, T) {
-        debug_assert!(self.impl_trait_defs.is_empty());
         debug_assert!(self.impl_trait_bounds.is_empty());
 
         // Error if `?Trait` bounds in where clauses don't refer directly to type parameters.
@@ -1382,10 +1380,14 @@ impl<'hir> LoweringContext<'_, 'hir> {
         let res = f(self);
 
         let extra_lifetimes = self.resolver.take_extra_lifetime_params(parent_node_id);
-        let impl_trait_defs = std::mem::take(&mut self.impl_trait_defs);
         params.extend(extra_lifetimes.into_iter().filter_map(|(ident, node_id, res)| {
             self.lifetime_res_to_generic_param(ident, node_id, res)
         }));
+
+        let impl_trait_defs = match itctx {
+            ImplTraitContext::Universal { impl_trait_defs } => std::mem::take(impl_trait_defs),
+            _ => Vec::new(),
+        };
         params.extend(impl_trait_defs.into_iter());
 
         let impl_trait_bounds = std::mem::take(&mut self.impl_trait_bounds);
