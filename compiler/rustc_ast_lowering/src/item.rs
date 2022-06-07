@@ -1302,7 +1302,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         &mut self,
         generics: &Generics,
         parent_node_id: NodeId,
-        itctx: ImplTraitContext,
+        mut itctx: ImplTraitContext,
         f: impl FnOnce(&mut Self) -> T,
     ) -> (&'hir hir::Generics<'hir>, T) {
         debug_assert!(self.impl_trait_defs.is_empty());
@@ -1357,7 +1357,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
         let mut predicates: SmallVec<[hir::WherePredicate<'hir>; 4]> = SmallVec::new();
         predicates.extend(generics.params.iter().filter_map(|param| {
-            let bounds = self.lower_param_bounds(&param.bounds, itctx);
+            let bounds = self.lower_param_bounds(&param.bounds, itctx.reborrow());
             self.lower_generic_bound_predicate(
                 param.ident,
                 param.id,
