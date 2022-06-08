@@ -1,7 +1,7 @@
 use super::{AstOwner, ImplTraitContext, ImplTraitPosition, ResolverAstLowering};
 use super::{LoweringContext, ParamMode};
 use crate::def_id_remapper::DefIdRemapper;
-use crate::{Arena, FnDeclKind};
+use crate::{Arena, FnDeclKind, LoweringArena};
 
 use rustc_ast::ptr::P;
 use rustc_ast::visit::AssocCtxt;
@@ -27,6 +27,7 @@ pub(super) struct ItemLowerer<'a, 'hir> {
     pub(super) sess: &'a Session,
     pub(super) resolver: &'a mut dyn ResolverAstLowering,
     pub(super) arena: &'hir Arena<'hir>,
+    pub(super) lowering_arena: &'a LoweringArena,
     pub(super) ast_index: &'a IndexVec<LocalDefId, AstOwner<'a>>,
     pub(super) owners: &'a mut IndexVec<LocalDefId, hir::MaybeOwner<&'hir hir::OwnerInfo<'hir>>>,
 }
@@ -62,6 +63,7 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
             sess: &self.sess,
             resolver: DefIdRemapper::new(self.resolver),
             arena: self.arena,
+            lowering_arena: self.lowering_arena,
 
             // HirId handling.
             bodies: Vec::new(),
@@ -167,7 +169,7 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
     }
 }
 
-impl<'hir> LoweringContext<'_, 'hir> {
+impl<'a, 'hir> LoweringContext<'a, 'hir> {
     pub(super) fn lower_mod(&mut self, items: &[P<Item>], spans: &ModSpans) -> hir::Mod<'hir> {
         hir::Mod {
             spans: hir::ModSpans {
@@ -269,7 +271,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     let body_id =
                         this.lower_maybe_async_body(span, &decl, asyncness, body.as_deref());
 
-                    let itctx = ImplTraitContext::Universal;
+                    let itctx = ImplTraitContext::Universal { apit_nodes: &mut Vec::new() };
                     let (generics, decl) = this.lower_generics(generics, id, itctx, |this| {
                         let ret_id = asyncness.opt_return_id();
                         this.lower_fn_decl(&decl, Some(id), FnDeclKind::Fn, generics, ret_id)
@@ -388,7 +390,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 // method, it will not be considered an in-band
                 // lifetime to be added, but rather a reference to a
                 // parent lifetime.
-                let itctx = ImplTraitContext::Universal;
+                let itctx = ImplTraitContext::Universal { apit_nodes: &mut Vec::new() };
                 let (generics, (trait_ref, lowered_ty)) =
                     self.lower_generics(ast_generics, id, itctx, |this| {
                         let trait_ref = trait_ref.as_ref().map(|trait_ref| {
@@ -657,7 +659,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
             kind: match i.kind {
                 ForeignItemKind::Fn(box Fn { ref sig, ref generics, .. }) => {
                     let fdec = &sig.decl;
-                    let itctx = ImplTraitContext::Universal;
+                    let itctx = ImplTraitContext::Universal { apit_nodes: &mut Vec::new() };
                     let (generics, (fn_dec, fn_args)) =
                         self.lower_generics(generics, i.id, itctx, |this| {
                             (
@@ -1247,7 +1249,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         is_async: Option<NodeId>,
     ) -> (&'hir hir::Generics<'hir>, hir::FnSig<'hir>) {
         let header = self.lower_fn_header(sig.header);
-        let itctx = ImplTraitContext::Universal;
+        let itctx = ImplTraitContext::Universal { apit_nodes: &mut Vec::new() };
         let (generics, decl) = self.lower_generics(generics, id, itctx, |this| {
             this.lower_fn_decl(&sig.decl, Some(id), kind, generics, is_async)
         });
@@ -1309,13 +1311,16 @@ impl<'hir> LoweringContext<'_, 'hir> {
     /// Return the pair of the lowered `generics` as `hir::Generics` and the evaluation of `f` with
     /// the carried impl trait definitions and bounds.
     #[instrument(level = "debug", skip(self, f))]
-    fn lower_generics<T>(
+    fn lower_generics<'itctx, T>(
         &mut self,
-        generics: &Generics,
+        generics: &'itctx Generics,
         parent_node_id: NodeId,
-        mut itctx: ImplTraitContext<'_>,
+        mut itctx: ImplTraitContext<'_, 'itctx>,
         f: impl FnOnce(&mut Self) -> T,
-    ) -> (&'hir hir::Generics<'hir>, T) {
+    ) -> (&'hir hir::Generics<'hir>, T)
+    where
+        'a: 'itctx,
+    {
         debug_assert!(self.impl_trait_defs.is_empty());
         debug_assert!(self.impl_trait_bounds.is_empty());
 
