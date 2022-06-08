@@ -268,6 +268,7 @@ enum ImplTraitContext<'a> {
     ReturnPositionOpaqueTy {
         /// Origin: Either OpaqueTyOrigin::FnReturn or OpaqueTyOrigin::AsyncFn,
         origin: hir::OpaqueTyOrigin,
+        impl_trait_inputs: &'a Vec<&'a Param>,
         /// In scope generics
         generics: &'a Generics,
     },
@@ -306,8 +307,12 @@ impl ImplTraitContext<'_> {
         use self::ImplTraitContext::*;
         match self {
             Universal => Universal,
-            ReturnPositionOpaqueTy { origin, generics } => {
-                ReturnPositionOpaqueTy { origin: *origin, generics: *generics }
+            ReturnPositionOpaqueTy { origin, impl_trait_inputs, generics } => {
+                ReturnPositionOpaqueTy {
+                    origin: *origin,
+                    impl_trait_inputs: *impl_trait_inputs,
+                    generics: *generics,
+                }
             }
             TypeAliasesOpaqueTy => TypeAliasesOpaqueTy,
             Disallowed(pos) => Disallowed(*pos),
@@ -1406,13 +1411,18 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             TyKind::ImplTrait(def_node_id, ref bounds) => {
                 let span = t.span;
                 match itctx {
-                    ImplTraitContext::ReturnPositionOpaqueTy { origin, generics } => {
+                    ImplTraitContext::ReturnPositionOpaqueTy {
+                        origin,
+                        impl_trait_inputs,
+                        generics,
+                    } => {
                         if self.sess.features_untracked().return_position_impl_trait_v2 {
                             self.lower_opaque_impl_trait_v2(
                                 span,
                                 origin,
                                 def_node_id,
                                 generics,
+                                impl_trait_inputs,
                                 |this| this.lower_param_bounds(bounds, itctx),
                             )
                         } else {
@@ -1559,6 +1569,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         origin: hir::OpaqueTyOrigin,
         opaque_ty_node_id: NodeId,
         ast_generics: &Generics,
+        impl_trait_inputs: &Vec<&Param>,
         lower_bounds: impl FnOnce(&mut Self) -> hir::GenericBounds<'hir>,
     ) -> hir::TyKind<'hir> {
         // Make sure we know that some funky desugaring has been going on here.
@@ -1571,12 +1582,52 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let opaque_ty_def_id = self.resolver.local_def_id(opaque_ty_node_id);
 
         let mut collected_lifetimes = FxHashMap::default();
+        let mut universal_paths = Vec::new();
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
             lctx.with_fresh_generics_def_id_map(|lctx| {
                 let type_const_params =
                     lctx.remap_type_and_const_params(opaque_ty_def_id, &ast_generics.params);
 
                 debug!(?type_const_params);
+
+                let (universal_params, universal_predicates, universal_paths_inner): (
+                    Vec<_>,
+                    Vec<_>,
+                    Vec<_>,
+                ) = itertools::multiunzip(impl_trait_inputs.iter().map(|param| {
+                    let ty = &param.ty;
+                    if let TyKind::ImplTrait(node_id, ref bounds) = ty.kind {
+                        let orig_def_id = lctx.resolver.local_def_id(node_id);
+
+                        // Add a definition for the generic param def.
+                        let new_def_id = lctx.resolver.create_def(
+                            opaque_ty_def_id,
+                            DUMMY_NODE_ID,
+                            DefPathData::ImplTrait,
+                            ExpnId::root(),
+                            param.span.with_parent(None),
+                        );
+
+                        lctx.resolver.add_remapping(orig_def_id, new_def_id);
+                        trace!(?orig_def_id, ?new_def_id, "recording remapping");
+
+                        let span = ty.span;
+                        let ident = Ident::from_str_and_span(&pprust::ty_to_string(ty), span);
+                        // FIXME: unsure if this is going to work or do we need to first create all
+                        // the def_ids and then call this lower_generic_and_bounds method
+                        lctx.lower_generic_and_bounds(node_id, span, ident, bounds)
+                    } else {
+                        unreachable!(
+                            "impl_trait_inputs contains {:?} which is not TyKind::ImplTrait(..)",
+                            ty.kind
+                        );
+                    }
+                }));
+                universal_paths = universal_paths_inner;
+
+                debug!(?universal_params);
+                debug!(?universal_predicates);
+                debug!(?universal_paths);
 
                 let hir_bounds = if origin == hir::OpaqueTyOrigin::TyAlias {
                     lower_bounds(lctx)
@@ -1614,8 +1665,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                 debug!(?lifetime_params);
 
-                let generic_params =
-                    lifetime_params.into_iter().chain(type_const_params.into_iter());
+                let generic_params = lifetime_params
+                    .into_iter()
+                    .chain(type_const_params.into_iter())
+                    .chain(universal_params);
 
                 let mut predicates = Vec::new();
                 lctx.with_in_scope_lifetime_bounds(|lctx| {
@@ -1630,6 +1683,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             &param.bounds,
                             ImplTraitContext::ReturnPositionOpaqueTy {
                                 origin,
+                                impl_trait_inputs,
                                 generics: ast_generics,
                             },
                         );
@@ -1654,6 +1708,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                     debug!(?predicates);
                 });
+                predicates.extend(universal_predicates.into_iter().flatten());
 
                 let has_where_clause = !predicates.is_empty();
 
@@ -1686,9 +1741,28 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         let type_const_args = self.collect_type_and_const_args(&ast_generics.params);
 
-        let generic_args = self
-            .arena
-            .alloc_from_iter(lifetime_args.into_iter().chain(type_const_args.into_iter()));
+        let universal_args: Vec<_> = universal_paths
+            .into_iter()
+            .map(|ty| match ty {
+                hir::TyKind::Path(hir::QPath::Resolved(ty, path @ hir::Path { span, .. })) => {
+                    hir::GenericArg::Type(hir::Ty {
+                        hir_id: self.next_id(),
+                        span: *span,
+                        kind: hir::TyKind::Path(hir::QPath::Resolved(ty, path)),
+                    })
+                }
+                _ => {
+                    unreachable!("{:?} should be of type TyKind::Path(..)", ty);
+                }
+            })
+            .collect();
+
+        let generic_args = self.arena.alloc_from_iter(
+            lifetime_args
+                .into_iter()
+                .chain(type_const_args.into_iter())
+                .chain(universal_args.into_iter()),
+        );
 
         // `impl Trait` now just becomes `Foo<'a, 'b, ..>`.
         hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, generic_args)
@@ -1756,11 +1830,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         // Skip the `...` (`CVarArgs`) trailing arguments from the AST,
         // as they are not explicit in HIR/Ty function signatures.
         // (instead, the `c_variadic` flag is set to `true`)
-        let mut inputs = &decl.inputs[..];
+        let mut ast_inputs = &decl.inputs[..];
         if c_variadic {
-            inputs = &inputs[..inputs.len() - 1];
+            ast_inputs = &ast_inputs[..ast_inputs.len() - 1];
         }
-        let inputs = self.arena.alloc_from_iter(inputs.iter().map(|param| {
+        let inputs = self.arena.alloc_from_iter(ast_inputs.iter().map(|param| {
             if fn_node_id.is_some() {
                 self.lower_ty_direct(&param.ty, ImplTraitContext::Universal)
             } else {
@@ -1780,6 +1854,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             }
         }));
 
+        let impl_trait_inputs: Vec<_> = ast_inputs
+            .iter()
+            .filter(|param| fn_node_id.is_some() && matches!(param.ty.kind, TyKind::ImplTrait(..)))
+            .collect();
+
         let output = if let Some(ret_id) = make_ret_async {
             self.lower_async_fn_ret_ty(
                 &decl.output,
@@ -1794,6 +1873,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             let fn_def_id = self.resolver.local_def_id(fn_node_id);
                             ImplTraitContext::ReturnPositionOpaqueTy {
                                 origin: hir::OpaqueTyOrigin::FnReturn(fn_def_id),
+                                impl_trait_inputs: &impl_trait_inputs,
                                 generics,
                             }
                         }
@@ -2051,6 +2131,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 // generates.
                 let context = ImplTraitContext::ReturnPositionOpaqueTy {
                     origin: hir::OpaqueTyOrigin::FnReturn(fn_def_id),
+                    impl_trait_inputs: &mut Vec::new(),
                     generics: &Generics::default(),
                 };
                 self.lower_ty(ty, context)
