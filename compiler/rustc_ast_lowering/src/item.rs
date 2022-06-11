@@ -145,6 +145,9 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
             LocalDefId { local_def_index }
         };
 
+        let parent_ast_owner = self.ast_index[parent_id];
+        let parent_generics = parent_ast_owner.item_generics();
+
         let parent_hir = self.lower_node(parent_id).unwrap();
         self.with_lctx(item.id, |lctx| {
             // Evaluate with the lifetimes in `params` in-scope.
@@ -158,8 +161,12 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
             };
 
             match ctxt {
-                AssocCtxt::Trait => hir::OwnerNode::TraitItem(lctx.lower_trait_item(item)),
-                AssocCtxt::Impl => hir::OwnerNode::ImplItem(lctx.lower_impl_item(item)),
+                AssocCtxt::Trait => {
+                    hir::OwnerNode::TraitItem(lctx.lower_trait_item(item, &parent_generics))
+                }
+                AssocCtxt::Impl => {
+                    hir::OwnerNode::ImplItem(lctx.lower_impl_item(item, &parent_generics))
+                }
             }
         })
     }
@@ -274,7 +281,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     let itctx = ImplTraitContext::Universal { apit_nodes: &mut Vec::new() };
                     let (generics, decl) = this.lower_generics(generics, id, itctx, |this| {
                         let ret_id = asyncness.opt_return_id();
-                        this.lower_fn_decl(&decl, Some(id), FnDeclKind::Fn, generics, ret_id)
+                        this.lower_fn_decl(&decl, Some(id), FnDeclKind::Fn, generics, None, ret_id)
                     });
                     let sig = hir::FnSig {
                         decl,
@@ -670,6 +677,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                     FnDeclKind::ExternFn,
                                     generics,
                                     None,
+                                    None,
                                 ),
                                 this.lower_fn_params_to_names(fdec),
                             )
@@ -768,7 +776,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         }
     }
 
-    fn lower_trait_item(&mut self, i: &AssocItem) -> &'hir hir::TraitItem<'hir> {
+    fn lower_trait_item(
+        &mut self,
+        i: &AssocItem,
+        parent_generics: &ast::Generics,
+    ) -> &'hir hir::TraitItem<'hir> {
         let hir_id = self.lower_node_id(i.id);
         let trait_item_def_id = hir_id.expect_owner();
 
@@ -780,8 +792,14 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             }
             AssocItemKind::Fn(box Fn { ref sig, ref generics, body: None, .. }) => {
                 let names = self.lower_fn_params_to_names(&sig.decl);
-                let (generics, sig) =
-                    self.lower_method_sig(generics, sig, i.id, FnDeclKind::Trait, None);
+                let (generics, sig) = self.lower_method_sig(
+                    generics,
+                    parent_generics,
+                    sig,
+                    i.id,
+                    FnDeclKind::Trait,
+                    None,
+                );
                 (generics, hir::TraitItemKind::Fn(sig, hir::TraitFn::Required(names)))
             }
             AssocItemKind::Fn(box Fn { ref sig, ref generics, body: Some(ref body), .. }) => {
@@ -790,6 +808,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     self.lower_maybe_async_body(i.span, &sig.decl, asyncness, Some(&body));
                 let (generics, sig) = self.lower_method_sig(
                     generics,
+                    parent_generics,
                     sig,
                     i.id,
                     FnDeclKind::Trait,
@@ -865,7 +884,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.expr(span, hir::ExprKind::Err, AttrVec::new())
     }
 
-    fn lower_impl_item(&mut self, i: &AssocItem) -> &'hir hir::ImplItem<'hir> {
+    fn lower_impl_item(
+        &mut self,
+        i: &AssocItem,
+        parent_generics: &ast::Generics,
+    ) -> &'hir hir::ImplItem<'hir> {
         let (generics, kind) = match &i.kind {
             AssocItemKind::Const(_, ty, expr) => {
                 let ty = self.lower_ty(ty, ImplTraitContext::Disallowed(ImplTraitPosition::Type));
@@ -883,6 +906,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     self.lower_maybe_async_body(i.span, &sig.decl, asyncness, body.as_deref());
                 let (generics, sig) = self.lower_method_sig(
                     generics,
+                    parent_generics,
                     sig,
                     i.id,
                     if self.is_in_trait_impl { FnDeclKind::Impl } else { FnDeclKind::Inherent },
@@ -1243,6 +1267,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_method_sig(
         &mut self,
         generics: &Generics,
+        parent_generics: &Generics,
         sig: &FnSig,
         id: NodeId,
         kind: FnDeclKind,
@@ -1250,8 +1275,15 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     ) -> (&'hir hir::Generics<'hir>, hir::FnSig<'hir>) {
         let header = self.lower_fn_header(sig.header);
         let itctx = ImplTraitContext::Universal { apit_nodes: &mut Vec::new() };
-        let (generics, decl) = self.lower_generics(generics, id, itctx, |this| {
-            this.lower_fn_decl(&sig.decl, Some(id), kind, generics, is_async)
+        let (generics, decl) = self.lower_generics(&generics, id, itctx, |this| {
+            this.lower_fn_decl(
+                &sig.decl,
+                Some(id),
+                kind,
+                &generics,
+                Some(parent_generics),
+                is_async,
+            )
         });
         (generics, hir::FnSig { header, decl, span: self.lower_span(sig.span) })
     }
