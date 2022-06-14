@@ -23,7 +23,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         qself: &Option<QSelf>,
         p: &Path,
         param_mode: ParamMode,
-        mut itctx: ImplTraitContext<'_>,
+        mut itctx: ImplTraitContext<'_, 'hir>,
     ) -> hir::QPath<'hir> {
         let qself_position = qself.as_ref().map(|q| q.position);
         let qself = qself.as_ref().map(|q| self.lower_ty(&q.ty, itctx.reborrow()));
@@ -181,7 +181,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         segment: &PathSegment,
         param_mode: ParamMode,
         parenthesized_generic_args: ParenthesizedGenericArgs,
-        itctx: ImplTraitContext<'_>,
+        itctx: ImplTraitContext<'_, 'hir>,
     ) -> hir::PathSegment<'hir> {
         debug!("path_span: {:?}, lower_path_segment(segment: {:?})", path_span, segment,);
         let (mut generic_args, infer_args) = if let Some(ref generic_args) = segment.args {
@@ -319,7 +319,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         &mut self,
         data: &AngleBracketedArgs,
         param_mode: ParamMode,
-        mut itctx: ImplTraitContext<'_>,
+        mut itctx: ImplTraitContext<'_, 'hir>,
     ) -> (GenericArgsCtor<'hir>, bool) {
         let has_non_lt_args = data.args.iter().any(|arg| match arg {
             AngleBracketedArg::Arg(ast::GenericArg::Lifetime(_))
