@@ -17,13 +17,13 @@ use tracing::debug;
 
 impl<'a, 'hir> LoweringContext<'a, 'hir> {
     #[instrument(level = "trace", skip(self))]
-    pub(crate) fn lower_qpath(
+    pub(crate) fn lower_qpath<'ast>(
         &mut self,
         id: NodeId,
-        qself: &Option<QSelf>,
-        p: &Path,
+        qself: &'ast Option<QSelf>,
+        p: &'ast Path,
         param_mode: ParamMode,
-        mut itctx: ImplTraitContext<'_, 'hir>,
+        mut itctx: ImplTraitContext<'_, 'ast>,
     ) -> hir::QPath<'hir> {
         let qself_position = qself.as_ref().map(|q| q.position);
         let qself = qself.as_ref().map(|q| self.lower_ty(&q.ty, itctx.reborrow()));
@@ -175,13 +175,13 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.lower_path_extra(res, p, param_mode)
     }
 
-    pub(crate) fn lower_path_segment(
+    pub(crate) fn lower_path_segment<'ast>(
         &mut self,
         path_span: Span,
-        segment: &PathSegment,
+        segment: &'ast PathSegment,
         param_mode: ParamMode,
         parenthesized_generic_args: ParenthesizedGenericArgs,
-        itctx: ImplTraitContext<'_, 'hir>,
+        itctx: ImplTraitContext<'_, 'ast>,
     ) -> hir::PathSegment<'hir> {
         debug!("path_span: {:?}, lower_path_segment(segment: {:?})", path_span, segment,);
         let (mut generic_args, infer_args) = if let Some(ref generic_args) = segment.args {
@@ -315,11 +315,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         );
     }
 
-    pub(crate) fn lower_angle_bracketed_parameter_data(
+    pub(crate) fn lower_angle_bracketed_parameter_data<'ast>(
         &mut self,
-        data: &AngleBracketedArgs,
+        data: &'ast impl GenericArgsList,
         param_mode: ParamMode,
-        mut itctx: ImplTraitContext<'_, 'hir>,
+        mut itctx: ImplTraitContext<'_, 'ast>,
     ) -> (GenericArgsCtor<'hir>, bool) {
         let has_non_lt_args = data.args.iter().any(|arg| match arg {
             AngleBracketedArg::Arg(ast::GenericArg::Lifetime(_))

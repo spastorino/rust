@@ -1342,11 +1342,11 @@ impl<'hir> LoweringContext<'_, 'hir> {
     /// Return the pair of the lowered `generics` as `hir::Generics` and the evaluation of `f` with
     /// the carried impl trait definitions and bounds.
     #[instrument(level = "debug", skip(self, f))]
-    fn lower_generics<T>(
+    fn lower_generics<'ast, T>(
         &mut self,
-        generics: &Generics,
+        generics: &'ast Generics,
         parent_node_id: NodeId,
-        mut itctx: ImplTraitContext<'_, 'hir>,
+        mut itctx: ImplTraitContext<'_, 'ast>,
         f: impl FnOnce(&mut Self) -> T,
     ) -> (&'hir hir::Generics<'hir>, T) {
         debug_assert!(self.impl_trait_defs.is_empty());

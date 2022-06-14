@@ -206,6 +206,17 @@ impl GenericArg {
     }
 }
 
+/// Ref to a concrete argument in the sequence of generic args.
+#[derive(Clone, Debug)]
+pub enum GenericArgRef<'ast> {
+    /// `'a` in `Foo<'a>`
+    Lifetime(&'ast Lifetime),
+    /// `Bar` in `Foo<Bar>`
+    Type(&'ast Ty),
+    /// `1` in `Foo<1>`
+    Const(&'ast AnonConst),
+}
+
 /// A path like `Foo<'a, T>`.
 #[derive(Clone, Encodable, Decodable, Debug, Default)]
 pub struct AngleBracketedArgs {
@@ -244,6 +255,61 @@ impl Into<Option<P<GenericArgs>>> for ParenthesizedArgs {
     fn into(self) -> Option<P<GenericArgs>> {
         Some(P(GenericArgs::Parenthesized(self)))
     }
+}
+
+pub trait GenericArgList {
+    fn span(&self) -> Span;
+    fn len(&self) -> usize;
+    fn arg_at<'ast>(&'ast self, index: usize) -> AngleBracketedArgRef<'ast>;
+}
+
+impl GenericArgList for AngleBracketedArgs {
+    fn span(&self) -> Span {
+        self.span
+    }
+
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    fn arg_at<'ast>(&'ast self, index: usize) -> AngleBracketedArgRef<'ast> {
+        &self.data[index] // &AngleBracketedArg
+    }
+}
+
+impl GenericArgList for ParenthesizedArgs {
+    fn span(&self) -> Span {
+        self.span
+    }
+
+    fn len(&self) -> usize {
+        self.inputs.len()
+    }
+
+    fn arg_at<'ast>(&'ast self, index: usize) -> AngleBracketedArgRef<'ast> {
+        AngleBracketedArgRef::Arg(GenericArgRef::Type(&self.inputs[index]))
+    }
+}
+
+/// Either an argument for a parameter e.g., `'a`, `Vec<u8>`, `0`,
+/// or a constraint on an associated item, e.g., `Item = String` or `Item: Bound`.
+#[derive(Clone, Debug)]
+pub enum AngleBracketedArgRef<'ast> {
+    /// Argument for a generic parameter.
+    Arg(GenericArgRef<'ast>),
+    /// Constraint for an associated item.
+    Constraint(&'ast AssocConstraint),
+}
+
+/// Ref to a concrete argument in the sequence of generic args.
+#[derive(Clone, Debug)]
+pub enum GenericArgRef<'ast> {
+    /// `'a` in `Foo<'a>`
+    Lifetime(&'ast Lifetime),
+    /// `Bar` in `Foo<Bar>`
+    Type(&'ast Ty),
+    /// `1` in `Foo<1>`
+    Const(&'ast AnonConst),
 }
 
 /// A path like `Foo(A, B) -> C`.
