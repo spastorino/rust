@@ -259,7 +259,7 @@ enum ImplTraitContext<'a> {
     /// equivalent to a fresh universal parameter like `fn foo<T: Debug>(x: T)`.
     ///
     /// Newly generated parameters should be inserted into the given `Vec`.
-    Universal,
+    Universal { apit_nodes: &'a Vec<&'a Ty> },
 
     /// Treat `impl Trait` as shorthand for a new opaque type.
     /// Example: `fn foo() -> impl Debug`, where `impl Debug` is conceptually
@@ -1470,7 +1470,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             |this| this.lower_param_bounds(bounds, nested_itctx),
                         )
                     }
-                    ImplTraitContext::Universal => {
+                    ImplTraitContext::Universal { apit_nodes } => {
                         let span = t.span;
                         let ident = Ident::from_str_and_span(&pprust::ty_to_string(t), span);
                         let (param, bounds, path) =
@@ -1479,6 +1479,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         if let Some(bounds) = bounds {
                             self.impl_trait_bounds.push(bounds);
                         }
+                        apit_nodes.push(t); // XXX maybe we should push (def_node_id, bounds) instead so we don't have to match again?
                         path
                     }
                     ImplTraitContext::Disallowed(position) => {
@@ -1866,9 +1867,16 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         if c_variadic {
             ast_inputs = &ast_inputs[..ast_inputs.len() - 1];
         }
+        let mut impl_trait_inputs = vec![];
         let inputs = self.arena.alloc_from_iter(ast_inputs.iter().map(|param| {
             if fn_node_id.is_some() {
-                self.lower_ty_direct(&param.ty, ImplTraitContext::Universal)
+                // XXX Modify `lower_ty_direct` so that, when we lower an APIT, we push it into the vector
+                // here. We might also want to push more information, e.g. the resulting def-id etc, I forget
+                // what we need.
+                self.lower_ty_direct(
+                    &param.ty,
+                    ImplTraitContext::Universal { apit_nodes: &mut impl_trait_inputs },
+                )
             } else {
                 self.lower_ty_direct(
                     &param.ty,
@@ -1885,11 +1893,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 )
             }
         }));
-
-        let impl_trait_inputs: Vec<_> = ast_inputs
-            .iter()
-            .filter(|param| fn_node_id.is_some() && matches!(param.ty.kind, TyKind::ImplTrait(..)))
-            .collect();
 
         let output = if let Some(ret_id) = make_ret_async {
             self.lower_async_fn_ret_ty(
