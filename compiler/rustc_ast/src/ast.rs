@@ -206,17 +206,6 @@ impl GenericArg {
     }
 }
 
-/// Ref to a concrete argument in the sequence of generic args.
-#[derive(Clone, Debug)]
-pub enum GenericArgRef<'ast> {
-    /// `'a` in `Foo<'a>`
-    Lifetime(&'ast Lifetime),
-    /// `Bar` in `Foo<Bar>`
-    Type(&'ast Ty),
-    /// `1` in `Foo<1>`
-    Const(&'ast AnonConst),
-}
-
 /// A path like `Foo<'a, T>`.
 #[derive(Clone, Encodable, Decodable, Debug, Default)]
 pub struct AngleBracketedArgs {
@@ -269,11 +258,24 @@ impl GenericArgList for AngleBracketedArgs {
     }
 
     fn len(&self) -> usize {
-        self.data.len()
+        self.args.len()
     }
 
     fn arg_at<'ast>(&'ast self, index: usize) -> AngleBracketedArgRef<'ast> {
-        &self.data[index] // &AngleBracketedArg
+        match &self.args[index] {
+            AngleBracketedArg::Arg(generic_arg) => match generic_arg {
+                GenericArg::Lifetime(lifetime) => {
+                    AngleBracketedArgRef::Arg(GenericArgRef::Lifetime(&lifetime))
+                }
+                GenericArg::Type(ty) => AngleBracketedArgRef::Arg(GenericArgRef::Type(&ty)),
+                GenericArg::Const(anon_const) => {
+                    AngleBracketedArgRef::Arg(GenericArgRef::Const(&anon_const))
+                }
+            },
+            AngleBracketedArg::Constraint(assoc_constraint) => {
+                AngleBracketedArgRef::Constraint(&assoc_constraint)
+            }
+        }
     }
 }
 

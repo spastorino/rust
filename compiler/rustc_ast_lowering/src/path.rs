@@ -12,7 +12,7 @@ use rustc_hir::GenericArg;
 use rustc_span::symbol::{kw, Ident};
 use rustc_span::{BytePos, Span, DUMMY_SP};
 
-use smallvec::smallvec;
+use smallvec::{smallvec, SmallVec};
 use tracing::debug;
 
 impl<'a, 'hir> LoweringContext<'a, 'hir> {
@@ -218,12 +218,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         };
                         err.emit();
                         (
-                            self.lower_angle_bracketed_parameter_data(
-                                &data.as_angle_bracketed_args(),
-                                param_mode,
-                                itctx,
-                            )
-                            .0,
+                            self.lower_angle_bracketed_parameter_data(data, param_mode, itctx).0,
                             false,
                         )
                     }
@@ -317,30 +312,48 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     pub(crate) fn lower_angle_bracketed_parameter_data<'ast>(
         &mut self,
-        data: &'ast impl GenericArgsList,
+        data: &'ast impl GenericArgList,
         param_mode: ParamMode,
         mut itctx: ImplTraitContext<'_, 'ast>,
     ) -> (GenericArgsCtor<'hir>, bool) {
-        let has_non_lt_args = data.args.iter().any(|arg| match arg {
-            AngleBracketedArg::Arg(ast::GenericArg::Lifetime(_))
-            | AngleBracketedArg::Constraint(_) => false,
-            AngleBracketedArg::Arg(ast::GenericArg::Type(_) | ast::GenericArg::Const(_)) => true,
-        });
-        let args = data
-            .args
-            .iter()
-            .filter_map(|arg| match arg {
-                AngleBracketedArg::Arg(arg) => Some(self.lower_generic_arg(arg, itctx.reborrow())),
-                AngleBracketedArg::Constraint(_) => None,
-            })
-            .collect();
-        let bindings = self.arena.alloc_from_iter(data.args.iter().filter_map(|arg| match arg {
-            AngleBracketedArg::Constraint(c) => {
-                Some(self.lower_assoc_ty_constraint(c, itctx.reborrow()))
+        // pub trait GenericArgList {
+        //     fn span(&self) -> Span;
+        //     fn len(&self) -> usize;
+        //     fn arg_at<'ast>(&'ast self, index: usize) -> AngleBracketedArgRef<'ast>;
+        // }
+        let mut has_non_lt_args = false;
+        for i in 0..data.len() {
+            if let AngleBracketedArgRef::Arg(
+                ast::GenericArgRef::Type(_) | ast::GenericArgRef::Const(_),
+            ) = data.arg_at(i)
+            {
+                has_non_lt_args = true;
+                break;
             }
-            AngleBracketedArg::Arg(_) => None,
-        }));
-        let ctor = GenericArgsCtor { args, bindings, parenthesized: false, span: data.span };
+        }
+
+        let mut args: SmallVec<[hir::GenericArg<'hir>; 4]> = SmallVec::new();
+
+        for i in 0..data.len() {
+            if let AngleBracketedArgRef::Arg(arg) = data.arg_at(i) {
+                args.push(self.lower_generic_arg(arg, itctx.reborrow()));
+            }
+        }
+
+        let mut bindings = Vec::new();
+        for i in 0..data.len() {
+            if let AngleBracketedArgRef::Constraint(c) = data.arg_at(i) {
+                bindings.push(self.lower_assoc_ty_constraint(c, itctx.reborrow()));
+            }
+        }
+
+        let ctor = GenericArgsCtor {
+            args,
+            bindings: self.arena.alloc_from_iter(bindings.into_iter()),
+            parenthesized: false,
+            span: data.span(),
+        };
+
         (ctor, !has_non_lt_args && param_mode == ParamMode::Optional)
     }
 

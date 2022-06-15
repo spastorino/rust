@@ -1078,7 +1078,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 GenericArgs::Parenthesized(ref data) => {
                     self.assoc_ty_contraint_param_error_emit(data);
                     self.lower_angle_bracketed_parameter_data(
-                        &data.as_angle_bracketed_args(),
+                        data,
                         ParamMode::Explicit,
                         itctx.reborrow(),
                     )
@@ -1109,7 +1109,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     //
                     //     fn foo() -> impl Iterator<Item = impl Debug>
                     ImplTraitContext::ReturnPositionOpaqueTy { .. }
-                    | ImplTraitContext::TypeAliasesOpaqueTy { .. } => (true, itctx.reborrow()),
+                    | ImplTraitContext::TypeAliasesOpaqueTy { .. } => (true, itctx),
 
                     // We are in the argument position, but within a dyn type:
                     //
@@ -1118,9 +1118,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     // so desugar to
                     //
                     //     fn foo(x: dyn Iterator<Item = impl Debug>)
-                    ImplTraitContext::Universal { .. } if self.is_in_dyn_type => {
-                        (true, itctx.reborrow())
-                    }
+                    ImplTraitContext::Universal { .. } if self.is_in_dyn_type => (true, itctx),
 
                     // In `type Foo = dyn Iterator<Item: Debug>` we desugar to
                     // `type Foo = dyn Iterator<Item = impl Debug>` but we have to override the
@@ -1228,12 +1226,12 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     #[instrument(level = "debug", skip(self))]
     fn lower_generic_arg<'ast>(
         &mut self,
-        arg: &'ast ast::GenericArg,
+        arg: ast::GenericArgRef<'ast>,
         itctx: ImplTraitContext<'_, 'ast>,
     ) -> hir::GenericArg<'hir> {
         match arg {
-            ast::GenericArg::Lifetime(lt) => GenericArg::Lifetime(self.lower_lifetime(&lt)),
-            ast::GenericArg::Type(ty) => {
+            ast::GenericArgRef::Lifetime(lt) => GenericArg::Lifetime(self.lower_lifetime(&lt)),
+            ast::GenericArgRef::Type(ty) => {
                 match ty.kind {
                     TyKind::Infer if self.sess.features_untracked().generic_arg_infer => {
                         return GenericArg::Infer(hir::InferArg {
@@ -1289,7 +1287,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 }
                 GenericArg::Type(self.lower_ty_direct(&ty, itctx))
             }
-            ast::GenericArg::Const(ct) => GenericArg::Const(ConstArg {
+            ast::GenericArgRef::Const(ct) => GenericArg::Const(ConstArg {
                 value: self.lower_anon_const(&ct),
                 span: self.lower_span(ct.value.span),
             }),
