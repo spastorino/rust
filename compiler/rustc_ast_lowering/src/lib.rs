@@ -1069,10 +1069,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     ///
     /// returns a `hir::TypeBinding` representing `Item`.
     #[instrument(level = "debug", skip(self))]
-    fn lower_assoc_ty_constraint<'ast>(
+    fn lower_assoc_ty_constraint(
         &mut self,
-        constraint: &'ast AssocConstraint,
-        mut itctx: ImplTraitContext<'_, 'ast>,
+        constraint: &'a AssocConstraint,
+        mut itctx: ImplTraitContext<'_, 'a>,
     ) -> hir::TypeBinding<'hir> {
         debug!("lower_assoc_ty_constraint(constraint={:?}, itctx={:?})", constraint, itctx);
         // lower generic arguments of identifier in constraint

@@ -20,7 +20,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     pub(crate) fn lower_inline_asm(
         &mut self,
         sp: Span,
-        asm: &InlineAsm,
+        asm: &'a InlineAsm,
     ) -> &'hir hir::InlineAsm<'hir> {
         // Rustdoc needs to support asm! from foreign architectures: don't try
         // lowering the register constraints in this case.

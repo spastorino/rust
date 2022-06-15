@@ -16,16 +16,16 @@ use rustc_span::source_map::{respan, DesugaringKind, Span, Spanned};
 use rustc_span::symbol::{sym, Ident};
 use rustc_span::DUMMY_SP;
 
-impl<'hir> LoweringContext<'_, 'hir> {
-    fn lower_exprs(&mut self, exprs: &[AstP<Expr>]) -> &'hir [hir::Expr<'hir>] {
+impl<'a, 'hir> LoweringContext<'a, 'hir> {
+    fn lower_exprs(&mut self, exprs: &'a [AstP<Expr>]) -> &'hir [hir::Expr<'hir>] {
         self.arena.alloc_from_iter(exprs.iter().map(|x| self.lower_expr_mut(x)))
     }
 
-    pub(super) fn lower_expr(&mut self, e: &Expr) -> &'hir hir::Expr<'hir> {
+    pub(super) fn lower_expr(&mut self, e: &'a Expr) -> &'hir hir::Expr<'hir> {
         self.arena.alloc(self.lower_expr_mut(e))
     }
 
-    pub(super) fn lower_expr_mut(&mut self, e: &Expr) -> hir::Expr<'hir> {
+    pub(super) fn lower_expr_mut(&mut self, e: &'a Expr) -> hir::Expr<'hir> {
         ensure_sufficient_stack(|| {
             let kind = match e.kind {
                 ExprKind::Box(ref inner) => hir::ExprKind::Box(self.lower_expr(inner)),
