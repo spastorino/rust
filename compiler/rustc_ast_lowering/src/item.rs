@@ -3,6 +3,7 @@ use super::{LoweringContext, ParamMode};
 use crate::def_id_remapper::DefIdRemapper;
 use crate::{Arena, FnDeclKind};
 
+use rustc_arena::TypedArena;
 use rustc_ast::ptr::P;
 use rustc_ast::visit::AssocCtxt;
 use rustc_ast::*;
@@ -27,6 +28,7 @@ pub(super) struct ItemLowerer<'a, 'hir> {
     pub(super) sess: &'a Session,
     pub(super) resolver: &'a mut dyn ResolverAstLowering,
     pub(super) arena: &'hir Arena<'hir>,
+    pub(super) lowering_arena: TypedArena<Ty>,
     pub(super) ast_index: &'a IndexVec<LocalDefId, AstOwner<'a>>,
     pub(super) owners: &'a mut IndexVec<LocalDefId, hir::MaybeOwner<&'hir hir::OwnerInfo<'hir>>>,
 }
@@ -62,6 +64,7 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
             sess: &self.sess,
             resolver: DefIdRemapper::new(self.resolver),
             arena: self.arena,
+            lowering_arena: &self.lowering_arena,
 
             // HirId handling.
             bodies: Vec::new(),

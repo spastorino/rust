@@ -41,6 +41,7 @@
 extern crate tracing;
 
 use def_id_remapper::DefIdRemapper;
+use rustc_arena::TypedArena;
 use rustc_ast::visit;
 use rustc_ast::{self as ast, *};
 use rustc_ast_pretty::pprust;
@@ -93,6 +94,9 @@ struct LoweringContext<'a, 'hir: 'a> {
 
     /// Used to allocate HIR nodes.
     arena: &'hir Arena<'hir>,
+
+    /// Used to allocate AST nodes that live as long as lowering context does.
+    lowering_arena: &'a TypedArena<Ty>,
 
     /// Bodies inside the owner being lowered.
     bodies: Vec<(hir::ItemLocalId, &'hir hir::Body<'hir>)>,
@@ -474,8 +478,15 @@ pub fn lower_crate<'a, 'hir>(
         IndexVec::from_fn_n(|_| hir::MaybeOwner::Phantom, resolver.definitions().def_index_count());
 
     for def_id in ast_index.indices() {
-        item::ItemLowerer { sess, resolver, arena, ast_index: &ast_index, owners: &mut owners }
-            .lower_node(def_id);
+        item::ItemLowerer {
+            sess,
+            resolver,
+            arena,
+            lowering_arena: TypedArena::default(),
+            ast_index: &ast_index,
+            owners: &mut owners,
+        }
+        .lower_node(def_id);
     }
 
     let hir_hash = compute_hir_hash(resolver, &owners);
@@ -1156,15 +1167,13 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                     self.with_dyn_type_scope(false, |this| {
                         let node_id = this.resolver.next_node_id();
-                        let ty = this.lower_ty(
-                            &Ty {
-                                id: node_id,
-                                kind: TyKind::ImplTrait(impl_trait_node_id, bounds.clone()),
-                                span: this.lower_span(constraint.span),
-                                tokens: None,
-                            },
-                            itctx,
-                        );
+                        let ty = this.lowering_arena.alloc(Ty {
+                            id: node_id,
+                            kind: TyKind::ImplTrait(impl_trait_node_id, bounds.clone()),
+                            span: this.lower_span(constraint.span),
+                            tokens: None,
+                        });
+                        let ty = this.lower_ty(ty, itctx);
 
                         hir::TypeBindingKind::Equality { term: ty.into() }
                     })
