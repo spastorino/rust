@@ -389,7 +389,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_expr_if(
         &mut self,
         cond: &'a Expr,
-        then: &Block,
+        then: &'a Block,
         else_opt: Option<&'a Expr>,
     ) -> hir::ExprKind<'hir> {
         let lowered_cond = self.lower_expr(cond);
@@ -441,7 +441,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         &mut self,
         span: Span,
         cond: &'a Expr,
-        body: &Block,
+        body: &'a Block,
         opt_label: Option<Label>,
     ) -> hir::ExprKind<'hir> {
         let lowered_cond = self.with_loop_condition_scope(|t| t.lower_expr(cond));
@@ -462,7 +462,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Desugar `try { <stmts>; <expr> }` into `{ <stmts>; ::std::ops::Try::from_output(<expr>) }`,
     /// `try { <stmts>; }` into `{ <stmts>; ::std::ops::Try::from_output(()) }`
     /// and save the block id to use it as a break target for desugaring of the `?` operator.
-    fn lower_expr_try_block(&mut self, body: &Block) -> hir::ExprKind<'hir> {
+    fn lower_expr_try_block(&mut self, body: &'a Block) -> hir::ExprKind<'hir> {
         self.with_catch_scope(body.id, |this| {
             let mut block = this.lower_block_noalloc(body, true);
 
@@ -1417,7 +1417,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         e: &Expr,
         pat: &'a Pat,
         head: &'a Expr,
-        body: &Block,
+        body: &'a Block,
         opt_label: Option<Label>,
     ) -> hir::Expr<'hir> {
         let head = self.lower_expr_mut(head);

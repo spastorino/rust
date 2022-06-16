@@ -1041,12 +1041,12 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         &mut self,
         span: Span,
         decl: &'a FnDecl,
-        body: Option<&Block>,
+        body: Option<&'a Block>,
     ) -> hir::BodyId {
         self.lower_fn_body(decl, |this| this.lower_block_expr_opt(span, body))
     }
 
-    fn lower_block_expr_opt(&mut self, span: Span, block: Option<&Block>) -> hir::Expr<'hir> {
+    fn lower_block_expr_opt(&mut self, span: Span, block: Option<&'a Block>) -> hir::Expr<'hir> {
         match block {
             Some(block) => self.lower_block_expr(block),
             None => self.expr_err(span),
@@ -1070,7 +1070,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         span: Span,
         decl: &'a FnDecl,
         asyncness: Async,
-        body: Option<&Block>,
+        body: Option<&'a Block>,
     ) -> hir::BodyId {
         let closure_id = match asyncness {
             Async::Yes { closure_id, .. } => closure_id,

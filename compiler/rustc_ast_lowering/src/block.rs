@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 impl<'a, 'hir> LoweringContext<'a, 'hir> {
     pub(super) fn lower_block(
         &mut self,
-        b: &Block,
+        b: &'a Block,
         targeted_by_break: bool,
     ) -> &'hir hir::Block<'hir> {
         self.arena.alloc(self.lower_block_noalloc(b, targeted_by_break))
@@ -17,7 +17,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     pub(super) fn lower_block_noalloc(
         &mut self,
-        b: &Block,
+        b: &'a Block,
         targeted_by_break: bool,
     ) -> hir::Block<'hir> {
         let (stmts, expr) = self.lower_stmts(&b.stmts);
@@ -28,7 +28,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     fn lower_stmts(
         &mut self,
-        mut ast_stmts: &[Stmt],
+        mut ast_stmts: &'a [Stmt],
     ) -> (&'hir [hir::Stmt<'hir>], Option<&'hir hir::Expr<'hir>>) {
         let mut stmts = SmallVec::<[hir::Stmt<'hir>; 8]>::new();
         let mut expr = None;
@@ -121,8 +121,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         stmt_hir_id: hir::HirId,
         local: &'a Local,
         init: &'a Expr,
-        els: &Block,
-        tail: &[Stmt],
+        els: &'a Block,
+        tail: &'a [Stmt],
     ) -> &'hir hir::Expr<'hir> {
         let ty = local
             .ty
