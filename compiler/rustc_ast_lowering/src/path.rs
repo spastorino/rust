@@ -146,7 +146,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     pub(crate) fn lower_path_extra(
         &mut self,
         res: Res,
-        p: &Path,
+        p: &'a Path,
         param_mode: ParamMode,
     ) -> &'hir hir::Path<'hir> {
         self.arena.alloc(hir::Path {
@@ -167,7 +167,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     pub(crate) fn lower_path(
         &mut self,
         id: NodeId,
-        p: &Path,
+        p: &'a Path,
         param_mode: ParamMode,
     ) -> &'hir hir::Path<'hir> {
         let res = self.expect_full_res(id);
@@ -316,11 +316,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         param_mode: ParamMode,
         mut itctx: ImplTraitContext<'_, 'a>,
     ) -> (GenericArgsCtor<'hir>, bool) {
-        // pub trait GenericArgList {
-        //     fn span(&self) -> Span;
-        //     fn len(&self) -> usize;
-        //     fn arg_at<'ast>(&'ast self, index: usize) -> AngleBracketedArgRef<'ast>;
-        // }
         let mut has_non_lt_args = false;
         for i in 0..data.len() {
             if let AngleBracketedArgRef::Arg(
@@ -360,7 +355,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_parenthesized_parameter_data(
         &mut self,
         id: NodeId,
-        data: &ParenthesizedArgs,
+        data: &'a ParenthesizedArgs,
     ) -> (GenericArgsCtor<'hir>, bool) {
         // Switch to `PassThrough` mode for anonymous lifetimes; this
         // means that we permit things like `&Ref<T>`, where `Ref` has

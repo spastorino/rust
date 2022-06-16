@@ -28,7 +28,7 @@ pub(super) struct ItemLowerer<'a, 'hir> {
     pub(super) sess: &'a Session,
     pub(super) resolver: &'a mut dyn ResolverAstLowering,
     pub(super) arena: &'hir Arena<'hir>,
-    pub(super) lowering_arena: TypedArena<Ty>,
+    pub(super) lowering_arena: &'a TypedArena<Ty>,
     pub(super) ast_index: &'a IndexVec<LocalDefId, AstOwner<'a>>,
     pub(super) owners: &'a mut IndexVec<LocalDefId, hir::MaybeOwner<&'hir hir::OwnerInfo<'hir>>>,
 }
@@ -57,14 +57,14 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
     fn with_lctx(
         &mut self,
         owner: NodeId,
-        f: impl FnOnce(&mut LoweringContext<'_, 'hir>) -> hir::OwnerNode<'hir>,
+        f: impl FnOnce(&mut LoweringContext<'a, 'hir>) -> hir::OwnerNode<'hir>,
     ) {
         let mut lctx = LoweringContext {
             // Pseudo-globals.
             sess: &self.sess,
             resolver: DefIdRemapper::new(self.resolver),
             arena: self.arena,
-            lowering_arena: &self.lowering_arena,
+            lowering_arena: self.lowering_arena,
 
             // HirId handling.
             bodies: Vec::new(),
@@ -133,11 +133,11 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
     }
 
     #[instrument(level = "debug", skip(self))]
-    fn lower_item(&mut self, item: &Item) {
+    fn lower_item(&mut self, item: &'a Item) {
         self.with_lctx(item.id, |lctx| hir::OwnerNode::Item(lctx.lower_item(item)))
     }
 
-    fn lower_assoc_item(&mut self, item: &AssocItem, ctxt: AssocCtxt) {
+    fn lower_assoc_item(&mut self, item: &'a AssocItem, ctxt: AssocCtxt) {
         let def_id = self.resolver.local_def_id(item.id);
 
         let parent_id = {
@@ -172,12 +172,12 @@ impl<'a, 'hir> ItemLowerer<'a, 'hir> {
         })
     }
 
-    fn lower_foreign_item(&mut self, item: &ForeignItem) {
+    fn lower_foreign_item(&mut self, item: &'a ForeignItem) {
         self.with_lctx(item.id, |lctx| hir::OwnerNode::ForeignItem(lctx.lower_foreign_item(item)))
     }
 }
 
-impl<'hir> LoweringContext<'_, 'hir> {
+impl<'a, 'hir> LoweringContext<'a, 'hir> {
     pub(super) fn lower_mod(&mut self, items: &[P<Item>], spans: &ModSpans) -> hir::Mod<'hir> {
         hir::Mod {
             spans: hir::ModSpans {
@@ -220,7 +220,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         }
     }
 
-    fn lower_item(&mut self, i: &Item) -> &'hir hir::Item<'hir> {
+    fn lower_item(&mut self, i: &'a Item) -> &'hir hir::Item<'hir> {
         let mut ident = i.ident;
         let vis_span = self.lower_span(i.vis.span);
         let hir_id = self.lower_node_id(i.id);
@@ -244,7 +244,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         ident: &mut Ident,
         attrs: Option<&'hir [Attribute]>,
         vis_span: Span,
-        i: &ItemKind,
+        i: &'a ItemKind,
     ) -> hir::ItemKind<'hir> {
         match *i {
             ItemKind::ExternCrate(orig_name) => hir::ItemKind::ExternCrate(orig_name),
@@ -490,9 +490,9 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
     fn lower_const_item(
         &mut self,
-        ty: &Ty,
+        ty: &'a Ty,
         span: Span,
-        body: Option<&Expr>,
+        body: Option<&'a Expr>,
     ) -> (&'hir hir::Ty<'hir>, hir::BodyId) {
         let ty = self.lower_ty(ty, ImplTraitContext::Disallowed(ImplTraitPosition::Type));
         (ty, self.lower_const_body(span, body))
@@ -657,7 +657,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         }
     }
 
-    fn lower_foreign_item(&mut self, i: &ForeignItem) -> &'hir hir::ForeignItem<'hir> {
+    fn lower_foreign_item(&mut self, i: &'a ForeignItem) -> &'hir hir::ForeignItem<'hir> {
         let hir_id = self.lower_node_id(i.id);
         let def_id = hir_id.expect_owner();
         self.lower_attrs(hir_id, &i.attrs);
@@ -708,7 +708,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         }
     }
 
-    fn lower_variant(&mut self, v: &Variant) -> hir::Variant<'hir> {
+    fn lower_variant(&mut self, v: &'a Variant) -> hir::Variant<'hir> {
         let id = self.lower_node_id(v.id);
         self.lower_attrs(id, &v.attrs);
         hir::Variant {
@@ -723,7 +723,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
     fn lower_variant_data(
         &mut self,
         parent_id: hir::HirId,
-        vdata: &VariantData,
+        vdata: &'a VariantData,
     ) -> hir::VariantData<'hir> {
         match *vdata {
             VariantData::Struct(ref fields, recovered) => hir::VariantData::Struct(
@@ -749,7 +749,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         }
     }
 
-    fn lower_field_def(&mut self, (index, f): (usize, &FieldDef)) -> hir::FieldDef<'hir> {
+    fn lower_field_def(&mut self, (index, f): (usize, &'a FieldDef)) -> hir::FieldDef<'hir> {
         let ty = if let TyKind::Path(ref qself, ref path) = f.ty.kind {
             let t = self.lower_path_ty(
                 &f.ty,
@@ -779,8 +779,8 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
     fn lower_trait_item(
         &mut self,
-        i: &AssocItem,
-        parent_generics: &ast::Generics,
+        i: &'a AssocItem,
+        parent_generics: &'a ast::Generics,
     ) -> &'hir hir::TraitItem<'hir> {
         let hir_id = self.lower_node_id(i.id);
         let trait_item_def_id = hir_id.expect_owner();
@@ -887,8 +887,8 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
     fn lower_impl_item(
         &mut self,
-        i: &AssocItem,
-        parent_generics: &ast::Generics,
+        i: &'a AssocItem,
+        parent_generics: &'a ast::Generics,
     ) -> &'hir hir::ImplItem<'hir> {
         let (generics, kind) = match &i.kind {
             AssocItemKind::Const(_, ty, expr) => {
@@ -1013,7 +1013,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         body_id
     }
 
-    fn lower_param(&mut self, param: &Param) -> hir::Param<'hir> {
+    fn lower_param(&mut self, param: &'a Param) -> hir::Param<'hir> {
         let hir_id = self.lower_node_id(param.id);
         self.lower_attrs(hir_id, &param.attrs);
         hir::Param {
@@ -1026,7 +1026,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
     pub(super) fn lower_fn_body(
         &mut self,
-        decl: &FnDecl,
+        decl: &'a FnDecl,
         body: impl FnOnce(&mut Self) -> hir::Expr<'hir>,
     ) -> hir::BodyId {
         self.lower_body(|this| {
@@ -1040,7 +1040,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
     fn lower_fn_body_block(
         &mut self,
         span: Span,
-        decl: &FnDecl,
+        decl: &'a FnDecl,
         body: Option<&Block>,
     ) -> hir::BodyId {
         self.lower_fn_body(decl, |this| this.lower_block_expr_opt(span, body))
@@ -1053,7 +1053,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         }
     }
 
-    pub(super) fn lower_const_body(&mut self, span: Span, expr: Option<&Expr>) -> hir::BodyId {
+    pub(super) fn lower_const_body(&mut self, span: Span, expr: Option<&'a Expr>) -> hir::BodyId {
         self.lower_body(|this| {
             (
                 &[],
@@ -1068,7 +1068,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
     fn lower_maybe_async_body(
         &mut self,
         span: Span,
-        decl: &FnDecl,
+        decl: &'a FnDecl,
         asyncness: Async,
         body: Option<&Block>,
     ) -> hir::BodyId {
@@ -1267,9 +1267,9 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
     fn lower_method_sig(
         &mut self,
-        generics: &Generics,
-        parent_generics: &Generics,
-        sig: &FnSig,
+        generics: &'a Generics,
+        parent_generics: &'a Generics,
+        sig: &'a FnSig,
         id: NodeId,
         kind: FnDeclKind,
         is_async: Option<NodeId>,
@@ -1345,11 +1345,11 @@ impl<'hir> LoweringContext<'_, 'hir> {
     /// Return the pair of the lowered `generics` as `hir::Generics` and the evaluation of `f` with
     /// the carried impl trait definitions and bounds.
     #[instrument(level = "debug", skip(self, f))]
-    fn lower_generics<'ast, T>(
+    fn lower_generics<T>(
         &mut self,
-        generics: &'ast Generics,
+        generics: &'a Generics,
         parent_node_id: NodeId,
-        mut itctx: ImplTraitContext<'_, 'ast>,
+        mut itctx: ImplTraitContext<'_, 'a>,
         f: impl FnOnce(&mut Self) -> T,
     ) -> (&'hir hir::Generics<'hir>, T) {
         debug_assert!(self.impl_trait_defs.is_empty());
@@ -1518,7 +1518,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 
     pub(super) fn lower_where_predicate(
         &mut self,
-        pred: &WherePredicate,
+        pred: &'a WherePredicate,
     ) -> hir::WherePredicate<'hir> {
         match *pred {
             WherePredicate::BoundPredicate(WhereBoundPredicate {

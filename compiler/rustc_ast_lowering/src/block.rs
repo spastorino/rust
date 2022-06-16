@@ -93,7 +93,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         (self.arena.alloc_from_iter(stmts), expr)
     }
 
-    fn lower_local(&mut self, l: &Local) -> &'hir hir::Local<'hir> {
+    fn lower_local(&mut self, l: &'a Local) -> &'hir hir::Local<'hir> {
         let ty = l
             .ty
             .as_ref()
@@ -119,8 +119,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_let_else(
         &mut self,
         stmt_hir_id: hir::HirId,
-        local: &Local,
-        init: &Expr,
+        local: &'a Local,
+        init: &'a Expr,
         els: &Block,
         tail: &[Stmt],
     ) -> &'hir hir::Expr<'hir> {

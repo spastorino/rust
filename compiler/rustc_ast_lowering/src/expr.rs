@@ -388,9 +388,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     fn lower_expr_if(
         &mut self,
-        cond: &Expr,
+        cond: &'a Expr,
         then: &Block,
-        else_opt: Option<&Expr>,
+        else_opt: Option<&'a Expr>,
     ) -> hir::ExprKind<'hir> {
         let lowered_cond = self.lower_expr(cond);
         let new_cond = self.manage_let_cond(lowered_cond);
@@ -440,7 +440,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_expr_while_in_loop_scope(
         &mut self,
         span: Span,
-        cond: &Expr,
+        cond: &'a Expr,
         body: &Block,
         opt_label: Option<Label>,
     ) -> hir::ExprKind<'hir> {
@@ -517,7 +517,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.expr_call(overall_span, constructor, std::slice::from_ref(expr))
     }
 
-    fn lower_arm(&mut self, arm: &Arm) -> hir::Arm<'hir> {
+    fn lower_arm(&mut self, arm: &'a Arm) -> hir::Arm<'hir> {
         let pat = self.lower_pat(&arm.pat);
         let guard = arm.guard.as_ref().map(|cond| {
             if let ExprKind::Let(ref pat, ref scrutinee, span) = cond.kind {
@@ -651,7 +651,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     ///     }
     /// }
     /// ```
-    fn lower_expr_await(&mut self, dot_await_span: Span, expr: &Expr) -> hir::ExprKind<'hir> {
+    fn lower_expr_await(&mut self, dot_await_span: Span, expr: &'a Expr) -> hir::ExprKind<'hir> {
         let full_span = expr.span.to(dot_await_span);
         match self.generator_kind {
             Some(hir::GeneratorKind::Async(_)) => {}
@@ -836,8 +836,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         &mut self,
         capture_clause: CaptureBy,
         movability: Movability,
-        decl: &FnDecl,
-        body: &Expr,
+        decl: &'a FnDecl,
+        body: &'a Expr,
         fn_decl_span: Span,
     ) -> hir::ExprKind<'hir> {
         let (body_id, generator_option) = self.with_new_scopes(move |this| {
@@ -906,7 +906,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         capture_clause: CaptureBy,
         closure_id: NodeId,
         decl: &FnDecl,
-        body: &Expr,
+        body: &'a Expr,
         fn_decl_span: Span,
     ) -> hir::ExprKind<'hir> {
         let outer_decl =
@@ -971,13 +971,13 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// For instance, lower `(a, b) = t` to `{ let (lhs1, lhs2) = t; a = lhs1; b = lhs2; }`.
     fn lower_expr_assign(
         &mut self,
-        lhs: &Expr,
-        rhs: &Expr,
+        lhs: &'a Expr,
+        rhs: &'a Expr,
         eq_sign_span: Span,
         whole_span: Span,
     ) -> hir::ExprKind<'hir> {
         // Return early in case of an ordinary assignment.
-        fn is_ordinary(lower_ctx: &mut LoweringContext<'_, '_>, lhs: &Expr) -> bool {
+        fn is_ordinary<'a>(lower_ctx: &mut LoweringContext<'a, '_>, lhs: &'a Expr) -> bool {
             match &lhs.kind {
                 ExprKind::Array(..)
                 | ExprKind::Struct(..)
@@ -1031,7 +1031,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// It is not a complete check, but just tries to reject most paths early
     /// if they are not tuple structs.
     /// Type checking will take care of the full validation later.
-    fn extract_tuple_struct_path<'a>(
+    fn extract_tuple_struct_path(
         &mut self,
         expr: &'a Expr,
     ) -> Option<(&'a Option<QSelf>, &'a Path)> {
@@ -1053,7 +1053,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// It is not a complete check, but just tries to reject most paths early
     /// if they are not unit structs.
     /// Type checking will take care of the full validation later.
-    fn extract_unit_struct_path<'a>(
+    fn extract_unit_struct_path(
         &mut self,
         expr: &'a Expr,
     ) -> Option<(&'a Option<QSelf>, &'a Path)> {
@@ -1075,7 +1075,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Each sub-assignment is recorded in `assignments`.
     fn destructure_assign(
         &mut self,
-        lhs: &Expr,
+        lhs: &'a Expr,
         eq_sign_span: Span,
         assignments: &mut Vec<hir::Stmt<'hir>>,
     ) -> &'hir hir::Pat<'hir> {
@@ -1084,7 +1084,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     fn destructure_assign_mut(
         &mut self,
-        lhs: &Expr,
+        lhs: &'a Expr,
         eq_sign_span: Span,
         assignments: &mut Vec<hir::Stmt<'hir>>,
     ) -> hir::Pat<'hir> {
@@ -1224,7 +1224,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Each sub-assignment is recorded in `assignments`.
     fn destructure_sequence(
         &mut self,
-        elements: &[AstP<Expr>],
+        elements: &'a [AstP<Expr>],
         ctx: &str,
         eq_sign_span: Span,
         assignments: &mut Vec<hir::Stmt<'hir>>,
@@ -1248,7 +1248,12 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     }
 
     /// Desugar `<start>..=<end>` into `std::ops::RangeInclusive::new(<start>, <end>)`.
-    fn lower_expr_range_closed(&mut self, span: Span, e1: &Expr, e2: &Expr) -> hir::ExprKind<'hir> {
+    fn lower_expr_range_closed(
+        &mut self,
+        span: Span,
+        e1: &'a Expr,
+        e2: &'a Expr,
+    ) -> hir::ExprKind<'hir> {
         let e1 = self.lower_expr_mut(e1);
         let e2 = self.lower_expr_mut(e2);
         let fn_path =
@@ -1261,8 +1266,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_expr_range(
         &mut self,
         span: Span,
-        e1: Option<&Expr>,
-        e2: Option<&Expr>,
+        e1: Option<&'a Expr>,
+        e2: Option<&'a Expr>,
         lims: RangeLimits,
     ) -> hir::ExprKind<'hir> {
         use rustc_ast::RangeLimits::*;
@@ -1360,7 +1365,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         result
     }
 
-    fn lower_expr_field(&mut self, f: &ExprField) -> hir::ExprField<'hir> {
+    fn lower_expr_field(&mut self, f: &'a ExprField) -> hir::ExprField<'hir> {
         hir::ExprField {
             hir_id: self.next_id(),
             ident: self.lower_ident(f.ident),
@@ -1370,7 +1375,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         }
     }
 
-    fn lower_expr_yield(&mut self, span: Span, opt_expr: Option<&Expr>) -> hir::ExprKind<'hir> {
+    fn lower_expr_yield(&mut self, span: Span, opt_expr: Option<&'a Expr>) -> hir::ExprKind<'hir> {
         match self.generator_kind {
             Some(hir::GeneratorKind::Gen) => {}
             Some(hir::GeneratorKind::Async(_)) => {
@@ -1410,8 +1415,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_expr_for(
         &mut self,
         e: &Expr,
-        pat: &Pat,
-        head: &Expr,
+        pat: &'a Pat,
+        head: &'a Expr,
         body: &Block,
         opt_label: Option<Label>,
     ) -> hir::Expr<'hir> {
@@ -1514,7 +1519,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     ///         return Try::from_residual(residual),
     /// }
     /// ```
-    fn lower_expr_try(&mut self, span: Span, sub_expr: &Expr) -> hir::ExprKind<'hir> {
+    fn lower_expr_try(&mut self, span: Span, sub_expr: &'a Expr) -> hir::ExprKind<'hir> {
         let unstable_span = self.mark_span_with_reason(
             DesugaringKind::QuestionMark,
             span,
@@ -1619,7 +1624,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// ```
     /// But to simplify this, there's a `from_yeet` lang item function which
     /// handles the combined `FromResidual::from_residual(Yeet(residual))`.
-    fn lower_expr_yeet(&mut self, span: Span, sub_expr: Option<&Expr>) -> hir::ExprKind<'hir> {
+    fn lower_expr_yeet(&mut self, span: Span, sub_expr: Option<&'a Expr>) -> hir::ExprKind<'hir> {
         // The expression (if present) or `()` otherwise.
         let (yeeted_span, yeeted_expr) = if let Some(sub_expr) = sub_expr {
             (sub_expr.span, self.lower_expr(sub_expr))

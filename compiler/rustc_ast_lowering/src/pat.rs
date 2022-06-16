@@ -12,11 +12,11 @@ use rustc_span::symbol::Ident;
 use rustc_span::{source_map::Spanned, Span};
 
 impl<'a, 'hir> LoweringContext<'a, 'hir> {
-    pub(crate) fn lower_pat(&mut self, pattern: &Pat) -> &'hir hir::Pat<'hir> {
+    pub(crate) fn lower_pat(&mut self, pattern: &'a Pat) -> &'hir hir::Pat<'hir> {
         self.arena.alloc(self.lower_pat_mut(pattern))
     }
 
-    pub(crate) fn lower_pat_mut(&mut self, mut pattern: &Pat) -> hir::Pat<'hir> {
+    pub(crate) fn lower_pat_mut(&mut self, mut pattern: &'a Pat) -> hir::Pat<'hir> {
         ensure_sufficient_stack(|| {
             // loop here to avoid recursion
             let node = loop {
@@ -107,7 +107,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
     fn lower_pat_tuple(
         &mut self,
-        pats: &[P<Pat>],
+        pats: &'a [P<Pat>],
         ctx: &str,
     ) -> (&'hir [hir::Pat<'hir>], Option<usize>) {
         let mut elems = Vec::with_capacity(pats.len());
@@ -170,7 +170,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// When encountering `($binding_mode $ident @)? ..` (`slice`),
     /// this is interpreted as a sub-slice pattern semantically.
     /// Patterns that follow, which are not like `slice` -- or an error occurs, are in `after`.
-    fn lower_pat_slice(&mut self, pats: &[P<Pat>]) -> hir::PatKind<'hir> {
+    fn lower_pat_slice(&mut self, pats: &'a [P<Pat>]) -> hir::PatKind<'hir> {
         let mut before = Vec::new();
         let mut after = Vec::new();
         let mut slice = None;
@@ -334,7 +334,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     // }
     // m!(S);
     // ```
-    fn lower_expr_within_pat(&mut self, expr: &Expr, allow_paths: bool) -> &'hir hir::Expr<'hir> {
+    fn lower_expr_within_pat(
+        &mut self,
+        expr: &'a Expr,
+        allow_paths: bool,
+    ) -> &'hir hir::Expr<'hir> {
         match expr.kind {
             ExprKind::Lit(..) | ExprKind::ConstBlock(..) | ExprKind::Err => {}
             ExprKind::Path(..) if allow_paths => {}
