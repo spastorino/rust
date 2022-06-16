@@ -54,10 +54,10 @@ fn add_ty_alias_where_clause(
 }
 
 impl<'a, 'hir> ItemLowerer<'a, 'hir> {
-    fn with_lctx(
-        &mut self,
+    fn with_lctx<'call>(
+        &'call mut self,
         owner: NodeId,
-        f: impl FnOnce(&mut LoweringContext<'a, 'hir>) -> hir::OwnerNode<'hir>,
+        f: impl FnOnce(&mut LoweringContext<'call, 'hir>) -> hir::OwnerNode<'hir>,
     ) {
         let mut lctx = LoweringContext {
             // Pseudo-globals.
