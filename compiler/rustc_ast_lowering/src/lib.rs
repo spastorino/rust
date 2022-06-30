@@ -523,6 +523,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         debug_assert!(_old.is_none())
     }
 
+    /// Push a fresh "remapping" onto the name resolver.
+    #[tracing::instrument(level = "debug", skip(self, f))]
     fn with_fresh_generics_def_id_map<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         let current_map = std::mem::take(&mut self.generics_def_id_map);
         let result = f(self);
@@ -1604,6 +1606,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         collected_lifetimes.iter().map(|(_, &(_, _, p_name, _))| p_name).collect(),
                     );
 
+                    debug!(?lctx.in_scope_lifetime_bounds);
+
                     predicates.extend(ast_generics.params.iter().filter_map(|param| {
                         let bounds = lctx.lower_param_bounds(
                             &param.bounds,
@@ -1628,6 +1632,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                             .iter()
                             .map(|predicate| lctx.lower_where_predicate(predicate)),
                     );
+
+                    debug!(?predicates);
                 });
 
                 let has_where_clause = !predicates.is_empty();
