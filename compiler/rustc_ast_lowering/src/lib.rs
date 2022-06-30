@@ -814,7 +814,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 );
 
                 self.resolver.add_remapping(orig_def_id, new_def_id);
-                trace!(?orig_def_id, ?new_def_id, "recording remapping");
 
                 self.lower_generic_param(&param)
             })
@@ -1668,7 +1667,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         );
 
                         lctx.resolver.add_remapping(orig_def_id, new_def_id);
-                        trace!(?orig_def_id, ?new_def_id, "recording remapping");
 
                         let span = ty.span;
                         let ident = Ident::from_str_and_span(&pprust::ty_to_string(ty), span);
