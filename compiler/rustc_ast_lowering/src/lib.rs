@@ -40,6 +40,7 @@
 #[macro_use]
 extern crate tracing;
 
+use def_id_remapper::DefIdRemapper;
 use rustc_ast::visit;
 use rustc_ast::{self as ast, *};
 use rustc_ast_pretty::pprust;
@@ -75,6 +76,7 @@ macro_rules! arena_vec {
 
 mod asm;
 mod block;
+mod def_id_remapper;
 mod expr;
 mod index;
 mod item;
@@ -87,7 +89,7 @@ struct LoweringContext<'a, 'hir: 'a> {
     /// Used to assign IDs to HIR nodes that do not directly correspond to AST nodes.
     sess: &'a Session,
 
-    resolver: &'a mut dyn ResolverAstLowering,
+    resolver: DefIdRemapper<'a>,
 
     /// Used to allocate HIR nodes.
     arena: &'hir Arena<'hir>,
@@ -119,10 +121,6 @@ struct LoweringContext<'a, 'hir: 'a> {
     captured_lifetimes: Option<LifetimeCaptureContext>,
 
     in_scope_lifetime_bounds: Option<Vec<ParamName>>,
-
-    /// Used to map to the right def_id on generic parameters that are copied from the containing
-    /// function into an inner type (e.g. impl trait).
-    generics_def_id_map: FxHashMap<LocalDefId, LocalDefId>,
 
     current_hir_id_owner: LocalDefId,
     item_local_id_counter: hir::ItemLocalId,
@@ -497,6 +495,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             std::mem::replace(&mut self.item_local_id_counter, hir::ItemLocalId::new(1));
         let current_impl_trait_defs = std::mem::take(&mut self.impl_trait_defs);
         let current_impl_trait_bounds = std::mem::take(&mut self.impl_trait_bounds);
+        let current_resolver_maps = self.resolver.take_maps();
 
         // Always allocate the first `HirId` for the owner itself.
         let _old = self.node_id_to_local_id.insert(owner, hir::ItemLocalId::new(0));
@@ -518,6 +517,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.item_local_id_counter = current_local_counter;
         self.impl_trait_defs = current_impl_trait_defs;
         self.impl_trait_bounds = current_impl_trait_bounds;
+        self.resolver.restore_maps(current_resolver_maps);
 
         let _old = self.children.insert(def_id, hir::MaybeOwner::Owner(info));
         debug_assert!(_old.is_none())
@@ -526,9 +526,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Push a fresh "remapping" onto the name resolver.
     #[tracing::instrument(level = "debug", skip(self, f))]
     fn with_fresh_generics_def_id_map<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
-        let current_map = std::mem::take(&mut self.generics_def_id_map);
+        self.resolver.push_map();
         let result = f(self);
-        self.generics_def_id_map = current_map;
+        self.resolver.pop_map();
         result
     }
 
@@ -622,10 +622,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                 assert_ne!(local_id, hir::ItemLocalId::new(0));
                 if let Some(def_id) = self.resolver.opt_local_def_id(ast_node_id) {
-                    let def_id = self.generics_def_id_map.get(&def_id).unwrap_or(&def_id);
                     // Do not override a `MaybeOwner::Owner` that may already here.
-                    self.children.entry(*def_id).or_insert(hir::MaybeOwner::NonOwner(hir_id));
-                    self.local_id_to_def_id.insert(local_id, *def_id);
+                    self.children.entry(def_id).or_insert(hir::MaybeOwner::NonOwner(hir_id));
+                    self.local_id_to_def_id.insert(local_id, def_id);
                 }
 
                 if let Some(traits) = self.resolver.take_trait_map(ast_node_id) {
@@ -646,7 +645,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     fn lower_res(&mut self, res: Res<NodeId>) -> Res {
         let res = res.map_def_id(|def_id| {
             if let Some(local_def_id) = def_id.as_local() {
-                self.generics_def_id_map.get(&local_def_id).unwrap_or(&local_def_id).to_def_id()
+                self.resolver.remap(local_def_id).to_def_id()
             } else {
                 def_id
             }
@@ -770,7 +769,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     param.span().with_parent(None),
                 );
 
-                self.generics_def_id_map.insert(orig_def_id, new_def_id);
+                self.resolver.add_remapping(orig_def_id, new_def_id);
                 trace!(?orig_def_id, ?new_def_id, "recording remapping");
 
                 self.lower_generic_param(&param)
@@ -792,7 +791,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             .map(|param| {
                 let span = param.span();
                 let local_def_id = self.resolver.local_def_id(param.id);
-                let def_id = self.generics_def_id_map.get(&local_def_id).unwrap_or(&local_def_id).to_def_id();
+                let def_id = local_def_id.to_def_id();
 
                 match param.kind {
                     GenericParamKind::Lifetime => {
