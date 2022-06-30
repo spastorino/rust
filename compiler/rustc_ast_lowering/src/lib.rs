@@ -1780,7 +1780,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     origin,
                 };
 
-                trace!(?opaque_ty_def_id);
+                debug!(?opaque_ty_item);
+                debug!(?opaque_ty_def_id);
                 lctx.generate_opaque_type(opaque_ty_def_id, opaque_ty_item, span, opaque_ty_span)
             })
         });
