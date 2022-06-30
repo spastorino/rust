@@ -26,6 +26,10 @@ impl<'a> DefIdRemapper<'a> {
         self.generics_def_id_map.pop();
     }
 
+    pub fn is_empty_map(&self) -> bool {
+        self.generics_def_id_map.is_empty()
+    }
+
     /// Push a remapping into the top-most map. Panics if no map has been pushed.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn add_remapping(&mut self, from: LocalDefId, to: LocalDefId) {
@@ -87,14 +91,32 @@ impl ResolverAstLowering for DefIdRemapper<'_> {
     }
 
     fn get_lifetime_res(&self, id: NodeId) -> Option<crate::LifetimeRes> {
-        self.base_object.get_lifetime_res(id)
+        self.base_object.get_lifetime_res(id).map(|res| {
+            if let crate::LifetimeRes::Param { param, binder } = res {
+                crate::LifetimeRes::Param {
+                    param: self.remap(param),
+                    binder,
+                }
+            } else {
+                res
+            }
+        })
     }
 
     fn take_extra_lifetime_params(
         &mut self,
         id: NodeId,
     ) -> Vec<(rustc_span::symbol::Ident, NodeId, crate::LifetimeRes)> {
-        self.base_object.take_extra_lifetime_params(id)
+        self.base_object.take_extra_lifetime_params(id).into_iter().map(|(ident, node_id, res)| {
+            if let crate::LifetimeRes::Param { param, binder } = res {
+                (ident, node_id, crate::LifetimeRes::Param {
+                    param: self.remap(param),
+                    binder,
+                })
+            } else {
+                (ident, node_id, res)
+            }
+        }).collect()
     }
 
     fn create_stable_hashing_context(&self) -> rustc_query_system::ich::StableHashingContext<'_> {

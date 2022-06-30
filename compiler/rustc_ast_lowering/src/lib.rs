@@ -2284,6 +2284,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                                         span.with_parent(None),
                                     );
 
+                                    if !self.resolver.is_empty_map() {
+                                        self.resolver.add_remapping(param, p_def_id);
+                                    }
+
                                     v.insert((span, p_id, p_name, res));
                                     param = p_def_id;
                                 }
