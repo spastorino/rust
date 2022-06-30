@@ -748,7 +748,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
     /// Collect a "to be lowered" copy of each type and const generic parameter, skipping
     /// lifetimes.
     #[instrument(level = "debug", skip(self))]
-    fn collect_type_and_const_params(
+    fn remap_type_and_const_params(
         &mut self,
         parent_def_id: LocalDefId,
         params: &[GenericParam],
@@ -1557,7 +1557,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
             lctx.with_fresh_generics_def_id_map(|lctx| {
                 let type_const_params =
-                    lctx.collect_type_and_const_params(opaque_ty_def_id, &ast_generics.params);
+                    lctx.remap_type_and_const_params(opaque_ty_def_id, &ast_generics.params);
 
                 debug!(?type_const_params);
 
