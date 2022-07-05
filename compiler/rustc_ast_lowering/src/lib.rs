@@ -1822,7 +1822,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         );
 
         // `impl Trait` now just becomes `Foo<'a, 'b, ..>`.
-        hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, generic_args)
+        let result = hir::TyKind::OpaqueDef(hir::ItemId { def_id: opaque_ty_def_id }, generic_args);
+        debug!("lower_opaque_impl_trait_v2 = {:?}", result);
+        result
     }
 
     /// Registers a new opaque type with the proper `NodeId`s and
@@ -2464,6 +2466,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         hir::MutTy { ty: self.lower_ty(&mt.ty, itctx), mutbl: mt.mutbl }
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     fn lower_param_bounds<'itctx>(
         &mut self,
         bounds: &'itctx [GenericBound],
@@ -2486,6 +2489,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         bounds.iter().map(move |bound| self.lower_param_bound(bound, itctx.reborrow()))
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     fn lower_generic_and_bounds(
         &mut self,
         node_id: NodeId,
@@ -2527,6 +2531,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             }),
         ));
 
+        debug!("lower_generic_and_bounds=(param={:?}, preds={:?}, ty={:?})", param, preds, ty);
         (param, preds, ty)
     }
 

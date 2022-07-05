@@ -2113,10 +2113,9 @@ fn predicates_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::GenericPredicates<'_> {
 
 /// Returns a list of user-specified type predicates for the definition with ID `def_id`.
 /// N.B., this does not include any implied/inferred constraints.
+#[instrument(level = "trace", skip(tcx))]
 fn gather_explicit_predicates_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::GenericPredicates<'_> {
     use rustc_hir::*;
-
-    debug!("explicit_predicates_of(def_id={:?})", def_id);
 
     let hir_id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
     let node = tcx.hir().get(hir_id);
@@ -2256,6 +2255,8 @@ fn gather_explicit_predicates_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::GenericP
         + has_own_self as u32
         + early_bound_lifetimes_from_generics(tcx, ast_generics).count() as u32;
 
+    debug!("gather_explicit_predicates_of(predicates={:?})", predicates);
+    debug!("gather_explicit_predicates_of(ast_generics={:?})", ast_generics);
     // Collect the predicates that were written inline by the user on each
     // type parameter (e.g., `<T: Foo>`).
     for param in ast_generics.params {
@@ -2276,7 +2277,9 @@ fn gather_explicit_predicates_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::GenericP
                     Some((param.hir_id, ast_generics.predicates)),
                     param.span,
                 );
+                debug!("gather_explicit_predicates_of(bounds={:?})", bounds);
                 predicates.extend(bounds.predicates(tcx, param_ty));
+                debug!("gather_explicit_predicates_of(predicates={:?})", predicates);
             }
             GenericParamKind::Const { .. } => {
                 // Bounds on const parameters are currently not possible.
@@ -2285,6 +2288,7 @@ fn gather_explicit_predicates_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::GenericP
         }
     }
 
+    debug!("gather_explicit_predicates_of(predicates={:?})", predicates);
     // Add in the bounds that appear in the where-clause.
     for predicate in ast_generics.predicates {
         match predicate {
