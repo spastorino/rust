@@ -1640,7 +1640,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let opaque_ty_def_id = self.resolver.local_def_id(opaque_ty_node_id);
 
         let mut collected_lifetimes = FxHashMap::default();
-        let mut universal_paths = Vec::new();
         self.with_hir_id_owner(opaque_ty_node_id, |lctx| {
             lctx.with_fresh_generics_def_id_map(|lctx| {
                 let type_const_params =
@@ -1648,7 +1647,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
                 debug!(?type_const_params);
 
-                let (universal_params, universal_predicates, universal_paths_inner): (
+                let (universal_params, universal_predicates, universal_paths): (
                     Vec<_>,
                     Vec<_>,
                     Vec<_>,
@@ -1680,7 +1679,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         );
                     }
                 }));
-                universal_paths = universal_paths_inner;
 
                 debug!(?universal_params);
                 debug!(?universal_predicates);
@@ -1798,21 +1796,28 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         let type_const_args = self.collect_type_and_const_args(&ast_generics.params);
 
-        let universal_args: Vec<_> = universal_paths
-            .into_iter()
-            .map(|ty| match ty {
-                hir::TyKind::Path(hir::QPath::Resolved(ty, path @ hir::Path { span, .. })) => {
-                    hir::GenericArg::Type(hir::Ty {
-                        hir_id: self.next_id(),
-                        span: *span,
-                        kind: hir::TyKind::Path(hir::QPath::Resolved(ty, path)),
-                    })
-                }
-                _ => {
-                    unreachable!("{:?} should be of type TyKind::Path(..)", ty);
-                }
-            })
-            .collect();
+        let universal_args: Vec<_> = impl_trait_inputs.iter().map(|ty| match ty.kind {
+            TyKind::ImplTrait(node_id, _) => {
+                let def_id = self.resolver.local_def_id(node_id);
+                let span = ty.span;
+                let ident = Ident::from_str_and_span(&pprust::ty_to_string(ty), span);
+                hir::GenericArg::Type(hir::Ty {
+                    hir_id: self.next_id(),
+                    span,
+                    kind: hir::TyKind::Path(hir::QPath::Resolved(None, self.arena.alloc(hir::Path {
+                        span: self.lower_span(span),
+                        res: Res::Def(DefKind::TyParam, def_id.to_def_id()),
+                        segments: arena_vec![self; hir::PathSegment::from_ident(self.lower_ident(ident))],
+                    })))
+                })
+            }
+            _ => {
+                unreachable!(
+                    "impl_trait_inputs contains {:?} which is not TyKind::ImplTrait(..)",
+                    ty.kind
+                );
+            }
+        }).collect();
 
         let generic_args = self.arena.alloc_from_iter(
             lifetime_args
