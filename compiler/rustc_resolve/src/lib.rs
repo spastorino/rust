@@ -1710,6 +1710,16 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn record_lifetime_res(&mut self, id: NodeId, res: LifetimeRes) {
+        if let Some(prev_res) = self.lifetimes_res_map.insert(id, res) {
+            panic!(
+                "lifetime {:?} resolved multiple times ({:?} before, {:?} now)",
+                id, prev_res, res
+            )
+        }
+    }
+
     #[inline]
     fn add_to_glob_map(&mut self, import: &Import<'_>, ident: Ident) {
         if import.is_glob() {

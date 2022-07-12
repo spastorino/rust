@@ -1349,7 +1349,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
         let ident = lifetime.ident;
 
         if ident.name == kw::StaticLifetime {
-            self.record_lifetime_res(lifetime.id, LifetimeRes::Static);
+            self.r.record_lifetime_res(lifetime.id, LifetimeRes::Static);
             return;
         }
 
@@ -1362,7 +1362,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
             let rib = &self.lifetime_ribs[i];
             let normalized_ident = ident.normalize_to_macros_2_0();
             if let Some(&(_, res)) = rib.bindings.get(&normalized_ident) {
-                self.record_lifetime_res(lifetime.id, res);
+                self.r.record_lifetime_res(lifetime.id, res);
 
                 if let LifetimeRes::Param { param, .. } = res {
                     match self.lifetime_uses.entry(param) {
@@ -1429,7 +1429,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
         }
 
         self.emit_undeclared_lifetime_error(lifetime, outer_res);
-        self.record_lifetime_res(lifetime.id, LifetimeRes::Error);
+        self.r.record_lifetime_res(lifetime.id, LifetimeRes::Error);
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
@@ -1441,7 +1441,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
             match rib.kind {
                 LifetimeRibKind::AnonymousCreateParameter { binder, .. } => {
                     let res = self.create_fresh_lifetime(lifetime.id, lifetime.ident, binder);
-                    self.record_lifetime_res(lifetime.id, res);
+                    self.r.record_lifetime_res(lifetime.id, res);
                     return;
                 }
                 LifetimeRibKind::AnonymousReportError => {
@@ -1463,11 +1463,11 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                     .span_label(lifetime.ident.span, note)
                     .emit();
 
-                    self.record_lifetime_res(lifetime.id, LifetimeRes::Error);
+                    self.r.record_lifetime_res(lifetime.id, LifetimeRes::Error);
                     return;
                 }
                 LifetimeRibKind::AnonymousPassThrough(node_id, _) => {
-                    self.record_lifetime_res(
+                    self.r.record_lifetime_res(
                         lifetime.id,
                         LifetimeRes::Anonymous { binder: node_id, elided },
                     );
@@ -1481,7 +1481,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
         }
         // This resolution is wrong, it passes the work to HIR lifetime resolution.
         // We cannot use `LifetimeRes::Error` because we do not emit a diagnostic.
-        self.record_lifetime_res(
+        self.r.record_lifetime_res(
             lifetime.id,
             LifetimeRes::Anonymous { binder: DUMMY_NODE_ID, elided },
         );
@@ -1490,7 +1490,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
     #[tracing::instrument(level = "debug", skip(self))]
     fn resolve_elided_lifetime(&mut self, anchor_id: NodeId, span: Span) {
         let id = self.r.next_node_id();
-        self.record_lifetime_res(
+        self.r.record_lifetime_res(
             anchor_id,
             LifetimeRes::ElidedAnchor { start: id, end: NodeId::from_u32(id.as_u32() + 1) },
         );
@@ -1577,7 +1577,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
             let ident = Ident::new(kw::UnderscoreLifetime, elided_lifetime_span);
 
             let node_ids = self.r.next_node_ids(expected_lifetimes);
-            self.record_lifetime_res(
+            self.r.record_lifetime_res(
                 segment_id,
                 LifetimeRes::ElidedAnchor { start: node_ids.start, end: node_ids.end },
             );
@@ -1589,7 +1589,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                         LifetimeRibKind::AnonymousPassThrough(binder, _) => {
                             let res = LifetimeRes::Anonymous { binder, elided: true };
                             for id in node_ids {
-                                self.record_lifetime_res(id, res);
+                                self.r.record_lifetime_res(id, res);
                             }
                             break;
                         }
@@ -1604,7 +1604,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                             let res =
                                 LifetimeRes::Anonymous { binder: DUMMY_NODE_ID, elided: true };
                             for id in node_ids {
-                                self.record_lifetime_res(id, res);
+                                self.r.record_lifetime_res(id, res);
                             }
                             break;
                         }
@@ -1647,7 +1647,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                         should_lint = false;
 
                         for id in node_ids {
-                            self.record_lifetime_res(id, LifetimeRes::Error);
+                            self.r.record_lifetime_res(id, LifetimeRes::Error);
                         }
                         break;
                     }
@@ -1655,7 +1655,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                     LifetimeRibKind::AnonymousCreateParameter { binder, .. } => {
                         for id in node_ids {
                             let res = self.create_fresh_lifetime(id, ident, binder);
-                            self.record_lifetime_res(id, res);
+                            self.r.record_lifetime_res(id, res);
                         }
                         break;
                     }
@@ -1663,7 +1663,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                     LifetimeRibKind::AnonymousPassThrough(binder, _) => {
                         let res = LifetimeRes::Anonymous { binder, elided: true };
                         for id in node_ids {
-                            self.record_lifetime_res(id, res);
+                            self.r.record_lifetime_res(id, res);
                         }
                         break;
                     }
@@ -1677,7 +1677,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                         // emit a "missing lifetime specifier" diagnostic.
                         let res = LifetimeRes::Anonymous { binder: DUMMY_NODE_ID, elided: true };
                         for id in node_ids {
-                            self.record_lifetime_res(id, res);
+                            self.r.record_lifetime_res(id, res);
                         }
                         break;
                     }
@@ -1701,16 +1701,6 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                     ),
                 );
             }
-        }
-    }
-
-    #[tracing::instrument(level = "debug", skip(self))]
-    fn record_lifetime_res(&mut self, id: NodeId, res: LifetimeRes) {
-        if let Some(prev_res) = self.r.lifetimes_res_map.insert(id, res) {
-            panic!(
-                "lifetime {:?} resolved multiple times ({:?} before, {:?} now)",
-                id, prev_res, res
-            )
         }
     }
 
@@ -2022,7 +2012,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
             {
                 diagnostics::signal_lifetime_shadowing(self.r.session, original, param.ident);
                 // Record lifetime res, so lowering knows there is something fishy.
-                self.record_lifetime_res(param.id, LifetimeRes::Error);
+                self.r.record_lifetime_res(param.id, LifetimeRes::Error);
                 continue;
             }
 
@@ -2033,7 +2023,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                     self.report_error(param.ident.span, err);
                     if let GenericParamKind::Lifetime = param.kind {
                         // Record lifetime res, so lowering knows there is something fishy.
-                        self.record_lifetime_res(param.id, LifetimeRes::Error);
+                        self.r.record_lifetime_res(param.id, LifetimeRes::Error);
                         continue;
                     }
                 }
@@ -2052,7 +2042,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                 .span_label(param.ident.span, "`'_` is a reserved lifetime name")
                 .emit();
                 // Record lifetime res, so lowering knows there is something fishy.
-                self.record_lifetime_res(param.id, LifetimeRes::Error);
+                self.r.record_lifetime_res(param.id, LifetimeRes::Error);
                 continue;
             }
 
@@ -2067,7 +2057,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                 .span_label(param.ident.span, "'static is a reserved lifetime name")
                 .emit();
                 // Record lifetime res, so lowering knows there is something fishy.
-                self.record_lifetime_res(param.id, LifetimeRes::Error);
+                self.r.record_lifetime_res(param.id, LifetimeRes::Error);
                 continue;
             }
 
@@ -2079,7 +2069,7 @@ impl<'a: 'ast, 'b, 'ast> LateResolutionVisitor<'a, 'b, 'ast> {
                 GenericParamKind::Const { .. } => (&mut function_value_rib, DefKind::ConstParam),
                 GenericParamKind::Lifetime => {
                     let res = LifetimeRes::Param { param: def_id, binder };
-                    self.record_lifetime_res(param.id, res);
+                    self.r.record_lifetime_res(param.id, res);
                     function_lifetime_rib.bindings.insert(ident, (param.id, res));
                     continue;
                 }
