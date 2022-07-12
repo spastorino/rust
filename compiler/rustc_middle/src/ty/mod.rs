@@ -179,6 +179,8 @@ pub struct ResolverAstLowering {
     /// Lifetime parameters that lowering will have to introduce.
     pub extra_lifetime_params_map: NodeMap<Vec<(Ident, ast::NodeId, LifetimeRes)>>,
 
+    pub generics_def_id_map: Vec<FxHashMap<LocalDefId, LocalDefId>>,
+
     pub next_node_id: ast::NodeId,
 
     pub node_id_to_def_id: FxHashMap<ast::NodeId, LocalDefId>,

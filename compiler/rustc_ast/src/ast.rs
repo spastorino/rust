@@ -25,6 +25,7 @@ pub use UnsafeSource::*;
 use crate::ptr::P;
 use crate::token::{self, CommentKind, Delimiter};
 use crate::tokenstream::{DelimSpan, LazyTokenStream, TokenStream};
+use crate::visit::{BoundKind, LifetimeCtxt, Visitor};
 
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use rustc_data_structures::stack::ensure_sufficient_stack;
@@ -64,7 +65,7 @@ impl fmt::Debug for Label {
 
 /// A "Lifetime" is an annotation of the scope in which variable
 /// can be used, e.g. `'a` in `&'a i32`.
-#[derive(Clone, Encodable, Decodable, Copy)]
+#[derive(Clone, Encodable, Decodable, Copy, PartialEq, Eq)]
 pub struct Lifetime {
     pub id: NodeId,
     pub ident: Ident,
@@ -322,6 +323,55 @@ impl GenericBound {
 }
 
 pub type GenericBounds = Vec<GenericBound>;
+
+struct LifetimeCollectVisitor<'ast> {
+    binders_to_ignore: Vec<&'ast GenericParam>,
+    collected_lifetimes: Vec<&'ast Lifetime>,
+}
+
+impl<'ast> Visitor<'ast> for LifetimeCollectVisitor<'ast> {
+    fn visit_lifetime(&mut self, lifetime: &'ast Lifetime, _: LifetimeCtxt) {
+        if self.collected_lifetimes.contains(&lifetime) {
+            panic!("We are not expecting lifetime duplication {:?}", lifetime);
+        } else {
+            if self.binders_to_ignore.iter().find(|b| b.ident.name == lifetime.ident.name).is_none()
+            {
+                self.collected_lifetimes.push(lifetime);
+            }
+        }
+    }
+
+    fn visit_poly_trait_ref(&mut self, t: &'ast PolyTraitRef, _: &'ast TraitBoundModifier) {
+        for param in &t.bound_generic_params {
+            if let GenericParamKind::Lifetime = param.kind {
+                self.binders_to_ignore.push(param);
+            }
+            self.visit_generic_param(param);
+        }
+        self.visit_trait_ref(&t.trait_ref);
+        for param in &t.bound_generic_params {
+            if let GenericParamKind::Lifetime = param.kind {
+                self.binders_to_ignore.pop();
+            }
+        }
+    }
+}
+
+pub fn lifetimes_in_ret_ty(ret_ty: &FnRetTy) -> Vec<&Lifetime> {
+    let mut visitor =
+        LifetimeCollectVisitor { binders_to_ignore: Vec::new(), collected_lifetimes: Vec::new() };
+    visitor.visit_fn_ret_ty(ret_ty);
+    visitor.collected_lifetimes
+}
+
+pub fn lifetimes_in_bounds(bounds: &GenericBounds) -> Vec<&Lifetime> {
+    let mut visitor =
+        LifetimeCollectVisitor { binders_to_ignore: Vec::new(), collected_lifetimes: Vec::new() };
+    for bound in bounds {
+        visitor.visit_param_bound(bound, BoundKind::Bound);
+    }
+    visitor.collected_lifetimes
+}
 
 /// Specifies the enforced ordering for generic parameters. In the future,
 /// if we wanted to relax this order, we could override `PartialEq` and
