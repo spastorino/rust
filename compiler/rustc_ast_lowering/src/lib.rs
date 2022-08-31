@@ -243,7 +243,11 @@ enum ImplTraitContext<'b, 'itctx> {
     /// equivalent to a fresh universal parameter like `fn foo<T: Debug>(x: T)`.
     ///
     /// Newly generated parameters should be inserted into the given `Vec`.
-    Universal { apit_nodes: &'b mut Vec<&'itctx Ty> },
+    Universal {
+        apit_nodes: &'b mut Vec<&'itctx Ty>,
+    },
+
+    UniversalInRPIT,
 
     /// Treat `impl Trait` as shorthand for a new opaque type.
     /// Example: `fn foo() -> impl Debug`, where `impl Debug` is conceptually
@@ -719,6 +723,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 let local_id = self.item_local_id_counter;
                 let hir_id = hir::HirId { owner, local_id };
 
+                debug!("hir_id created: {:?} from {:?} via `lower_node_id`", hir_id, ast_node_id);
+
                 v.insert(local_id);
                 self.item_local_id_counter.increment_by(1);
 
@@ -743,6 +749,8 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let owner = self.current_hir_id_owner;
         let local_id = self.item_local_id_counter;
         assert_ne!(local_id, hir::ItemLocalId::new(0));
+        debug!("hir_id created: {:?} via `next_id`", hir::HirId { owner, local_id });
+
         self.item_local_id_counter.increment_by(1);
         hir::HirId { owner, local_id }
     }
@@ -1580,18 +1588,28 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         let span = t.span;
                         let ident = Ident::from_str_and_span(&pprust::ty_to_string(t), span);
                         apit_nodes.push(t);
-                        let (param, bounds, path) = self.lower_generic_and_bounds(
-                            def_node_id,
-                            span,
-                            ident,
-                            bounds,
-                            apit_nodes,
-                        );
+                        let (param, bounds, path) =
+                            self.lower_generic_and_bounds(def_node_id, span, ident, bounds, itctx);
                         self.impl_trait_defs.push(param);
                         if let Some(bounds) = bounds {
                             self.impl_trait_bounds.push(bounds);
                         }
                         path
+                    }
+                    ImplTraitContext::UniversalInRPIT => {
+                        let span = t.span;
+                        let ident = Ident::from_str_and_span(&pprust::ty_to_string(t), span);
+                        let def_id = self.local_def_id(def_node_id);
+                        let res = Res::Def(DefKind::TyParam, def_id.to_def_id());
+
+                        hir::TyKind::Path(hir::QPath::Resolved(
+                            None,
+                            self.arena.alloc(hir::Path {
+                                span: self.lower_span(span),
+                                res,
+                                segments: arena_vec![self; hir::PathSegment::new(self.lower_ident(ident), self.next_id(), res)],
+                            }),
+                        ))
                     }
                     ImplTraitContext::Disallowed(position) => {
                         self.tcx.sess.emit_err(MisplacedImplTrait {
@@ -1701,9 +1719,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             lctx.create_generic_defs(opaque_ty_def_id, &ast_generics.params, &mut new_remapping);
             debug!(?new_remapping);
 
+            debug!("impl_trait_inputs = {:#?}", impl_trait_inputs);
             for ty in impl_trait_inputs {
-                if let TyKind::ImplTrait(node_id, _) = ty.kind {
-                    let old_def_id = lctx.local_def_id(node_id);
+                if let TyKind::ImplTrait(node_id, _) = &ty.kind {
+                    let old_def_id = lctx.local_def_id(*node_id);
 
                     let node_id = lctx.next_node_id();
                     // Add a definition for the generic param def.
@@ -1786,13 +1805,12 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     Vec<_>,
                     Vec<_>,
                 ) = itertools::multiunzip(impl_trait_inputs.iter().map(|ty| {
+                    debug!("lowering impl trait input {:?}", ty);
                     // FIXME
                     if let TyKind::ImplTrait(node_id, ref bounds) = ty.kind {
                         let span = ty.span;
                         let ident = Ident::from_str_and_span(&pprust::ty_to_string(ty), span);
-                        // FIXME: unsure if this is going to work or do we need to first create all
-                        // the def_ids and then call this lower_generic_and_bounds method
-                        lctx.lower_generic_and_bounds(node_id, span, ident, bounds, &mut Vec::new())
+                        lctx.lower_generic_and_bounds(node_id, span, ident, bounds, &mut ImplTraitContext::UniversalInRPIT)
                     } else {
                         unreachable!(
                             "impl_trait_inputs contains {:?} which is not TyKind::ImplTrait(..)",
@@ -2639,7 +2657,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         span: Span,
         ident: Ident,
         bounds: &'itctx [GenericBound],
-        apit_nodes: &mut Vec<&'itctx Ty>,
+        itctx: &mut ImplTraitContext<'_, 'itctx>,
     ) -> (hir::GenericParam<'hir>, Option<hir::WherePredicate<'hir>>, hir::TyKind<'hir>)
     where
         'a: 'itctx,
@@ -2662,7 +2680,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             node_id,
             &GenericParamKind::Type { default: None },
             bounds,
-            &mut ImplTraitContext::Universal { apit_nodes },
+            itctx,
             hir::PredicateOrigin::ImplTrait,
         );
 
