@@ -1589,8 +1589,13 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         let span = t.span;
                         let ident = Ident::from_str_and_span(&pprust::ty_to_string(t), span);
                         apit_nodes.push(t);
-                        let (param, bounds, path) =
-                            self.lower_generic_and_bounds(def_node_id, span, ident, bounds, itctx);
+                        let (param, bounds, path) = self.lower_generic_bounds_and_tykind(
+                            def_node_id,
+                            span,
+                            ident,
+                            bounds,
+                            itctx,
+                        );
                         self.impl_trait_defs.push(param);
                         if let Some(bounds) = bounds {
                             self.impl_trait_bounds.push(bounds);
@@ -1806,12 +1811,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     Vec<_>,
                 ) = impl_trait_inputs.iter().map(|ty| {
                     debug!("lowering impl trait input {:?}", ty);
-                    // FIXME
                     if let TyKind::ImplTrait(node_id, ref bounds) = ty.kind {
                         let span = ty.span;
                         let ident = Ident::from_str_and_span(&pprust::ty_to_string(ty), span);
 
-                        let (universal_params, universal_predicates, _) = lctx.lower_generic_and_bounds(node_id, span, ident, bounds, &mut ImplTraitContext::UniversalInRPIT);
+                        let (universal_params, universal_predicates) = lctx.lower_generic_and_bounds(node_id, span, ident, bounds, &mut ImplTraitContext::UniversalInRPIT);
                         (universal_params, universal_predicates)
                     } else {
                         unreachable!(
@@ -2659,13 +2663,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         ident: Ident,
         bounds: &'itctx [GenericBound],
         itctx: &mut ImplTraitContext<'_, 'itctx>,
-    ) -> (hir::GenericParam<'hir>, Option<hir::WherePredicate<'hir>>, hir::TyKind<'hir>)
+    ) -> (hir::GenericParam<'hir>, Option<hir::WherePredicate<'hir>>)
     where
         'a: 'itctx,
     {
-        // Add a definition for the in-band `Param`.
-        let def_id = self.local_def_id(node_id);
-
         // Set the name to `impl Bound1 + Bound2`.
         let param = hir::GenericParam {
             hir_id: self.lower_node_id(node_id),
@@ -2685,6 +2686,27 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             hir::PredicateOrigin::ImplTrait,
         );
 
+        debug!("lower_generic_and_bounds=(param={:?}, preds={:?})", param, preds);
+        (param, preds)
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn lower_generic_bounds_and_tykind<'itctx>(
+        &mut self,
+        node_id: NodeId,
+        span: Span,
+        ident: Ident,
+        bounds: &'itctx [GenericBound],
+        itctx: &mut ImplTraitContext<'_, 'itctx>,
+    ) -> (hir::GenericParam<'hir>, Option<hir::WherePredicate<'hir>>, hir::TyKind<'hir>)
+    where
+        'a: 'itctx,
+    {
+        let (param, preds) = self.lower_generic_and_bounds(node_id, span, ident, bounds, itctx);
+
+        // Add a definition for the in-band `Param`.
+        let def_id = self.local_def_id(node_id);
+
         let hir_id = self.next_id();
         let res = Res::Def(DefKind::TyParam, def_id.to_def_id());
         let ty = hir::TyKind::Path(hir::QPath::Resolved(
@@ -2697,7 +2719,10 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             }),
         ));
 
-        debug!("lower_generic_and_bounds=(param={:?}, preds={:?}, ty={:?})", param, preds, ty);
+        debug!(
+            "lower_generic_bounds_and_tykind=(param={:?}, preds={:?}, ty={:?})",
+            param, preds, ty
+        );
         (param, preds, ty)
     }
 
