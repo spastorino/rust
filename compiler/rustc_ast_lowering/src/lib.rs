@@ -1586,7 +1586,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         )
                     }
                     ImplTraitContext::Universal { apit_nodes } => {
-                        let span = t.span;
+                        let span = self.lower_span(t.span);
                         let ident = Ident::from_str_and_span(&pprust::ty_to_string(t), span);
                         apit_nodes.push(t);
                         let (param, bounds, path) = self.lower_generic_bounds_and_tykind(
@@ -1603,7 +1603,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         path
                     }
                     ImplTraitContext::UniversalInRPIT => {
-                        let span = t.span;
+                        let span = self.lower_span(t.span);
                         let ident = Ident::from_str_and_span(&pprust::ty_to_string(t), span);
                         let def_id = self.local_def_id(def_node_id);
                         let res = Res::Def(DefKind::TyParam, def_id.to_def_id());
@@ -1611,7 +1611,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                         hir::TyKind::Path(hir::QPath::Resolved(
                             None,
                             self.arena.alloc(hir::Path {
-                                span: self.lower_span(span),
+                                span,
                                 res,
                                 segments: arena_vec![self; hir::PathSegment::new(self.lower_ident(ident), self.next_id(), res)],
                             }),
