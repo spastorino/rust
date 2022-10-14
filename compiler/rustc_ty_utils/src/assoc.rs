@@ -27,6 +27,7 @@ fn associated_item_def_ids(tcx: TyCtxt<'_>, def_id: DefId) -> &[DefId] {
 }
 
 fn associated_items(tcx: TyCtxt<'_>, def_id: DefId) -> ty::AssocItems<'_> {
+    debug!("associated_items: def_id={:?}", def_id);
     if tcx.is_trait_alias(def_id) {
         ty::AssocItems::new(Vec::new())
     } else {
@@ -43,8 +44,10 @@ fn impl_item_implementor_ids(tcx: TyCtxt<'_>, impl_id: DefId) -> FxHashMap<DefId
 }
 
 fn associated_item(tcx: TyCtxt<'_>, def_id: DefId) -> ty::AssocItem {
+    debug!("associated_item: def_id={:?}", def_id);
     let id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
     let parent_def_id = tcx.hir().get_parent_item(id);
+    debug!("associated_item: parent_def_id={:?}", parent_def_id);
     let parent_item = tcx.hir().expect_item(parent_def_id.def_id);
     match parent_item.kind {
         hir::ItemKind::Impl(ref impl_) => {
