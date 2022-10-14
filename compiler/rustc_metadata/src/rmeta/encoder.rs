@@ -993,6 +993,9 @@ fn should_encode_generics(def_kind: DefKind) -> bool {
 }
 
 fn should_encode_type(tcx: TyCtxt<'_>, def_id: LocalDefId, def_kind: DefKind) -> bool {
+    debug!("should_encode_type: def_id={:?}", def_id);
+    debug!("should_encode_type: def_kind={:?}", def_kind);
+
     match def_kind {
         DefKind::Struct
         | DefKind::Union
@@ -1019,6 +1022,7 @@ fn should_encode_type(tcx: TyCtxt<'_>, def_id: LocalDefId, def_kind: DefKind) ->
                 tcx.def_path(def_id.to_def_id()).get_impl_trait_in_trait_data()
             {
                 let assoc_item = tcx.associated_item(fn_def_id);
+                debug!("should_encode_type: assoc_item={:?}", assoc_item);
                 match assoc_item.container {
                     // Always encode an RPIT in an impl fn, since it always has a body
                     ty::AssocItemContainer::ImplContainer => true,
@@ -1143,6 +1147,7 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
         }
         let tcx = self.tcx;
         for local_id in tcx.iter_local_def_id() {
+            debug!("encode_def_ids local_id={:?}", local_id);
             let def_id = local_id.to_def_id();
             let def_kind = tcx.opt_def_kind(local_id);
             let Some(def_kind) = def_kind else { continue };
