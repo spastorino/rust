@@ -23,6 +23,7 @@ use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_errors::{struct_span_err, Applicability, DiagnosticBuilder, ErrorGuaranteed, StashKey};
 use rustc_hir as hir;
 use rustc_hir::def_id::{DefId, LocalDefId};
+use rustc_hir::definitions::DefPathData;
 use rustc_hir::intravisit::{self, Visitor};
 use rustc_hir::{GenericParamKind, Node};
 use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
@@ -30,7 +31,7 @@ use rustc_infer::traits::ObligationCause;
 use rustc_middle::hir::nested_filter;
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::util::{Discr, IntTypeExt};
-use rustc_middle::ty::{self, AdtKind, Const, IsSuggestable, ToPredicate, Ty, TyCtxt};
+use rustc_middle::ty::{self, AdtKind, Const, DefIdTree, IsSuggestable, ToPredicate, Ty, TyCtxt};
 use rustc_span::symbol::{kw, sym, Ident, Symbol};
 use rustc_span::Span;
 use rustc_target::spec::abi;
@@ -71,6 +72,7 @@ pub fn provide(providers: &mut Providers) {
         trait_def,
         adt_def,
         fn_sig,
+        assoc_items_for_rpitits,
         impl_trait_ref,
         impl_polarity,
         is_foreign_item,
@@ -1336,6 +1338,37 @@ fn suggest_impl_trait<'tcx>(
         }
     }
     None
+}
+
+fn assoc_items_for_rpitits(tcx: TyCtxt<'_>, trait_fn_def_id: DefId) -> &'_ [DefId] {
+    struct RPITVisitor {
+        rpits: Vec<DefId>,
+    }
+
+    impl<'v> Visitor<'v> for RPITVisitor {
+        fn visit_ty(&mut self, ty: &'v hir::Ty<'v>) {
+            if let hir::TyKind::OpaqueDef(item_id, _, _) = ty.kind {
+                self.rpits.push(item_id.owner_id.def_id.to_def_id())
+            }
+            intravisit::walk_ty(self, ty)
+        }
+    }
+
+    let mut visitor = RPITVisitor { rpits: Vec::new() };
+
+    if let Some(output) = tcx.hir().get_fn_output(trait_fn_def_id.expect_local()) {
+        visitor.visit_fn_ret_ty(output);
+
+        let trait_def_id = tcx.parent(trait_fn_def_id).expect_local();
+
+        tcx.arena.alloc_from_iter(visitor.rpits.iter().map(|_opaque_ty_def_id| {
+            let trait_assoc_ty =
+                tcx.at(output.span()).create_def(trait_def_id, DefPathData::ImplTraitAssocTy);
+            trait_assoc_ty.def_id().to_def_id()
+        }))
+    } else {
+        &[]
+    }
 }
 
 fn impl_trait_ref(tcx: TyCtxt<'_>, def_id: DefId) -> Option<ty::EarlyBinder<ty::TraitRef<'_>>> {
