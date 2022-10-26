@@ -28,7 +28,7 @@ use rustc_middle::traits::specialization_graph;
 use rustc_middle::ty::codec::TyEncoder;
 use rustc_middle::ty::fast_reject::{self, SimplifiedType, TreatParams};
 use rustc_middle::ty::query::Providers;
-use rustc_middle::ty::{self, SymbolName, Ty, TyCtxt};
+use rustc_middle::ty::{self, DefIdTree, SymbolName, Ty, TyCtxt};
 use rustc_middle::util::common::to_readable_str;
 use rustc_serialize::{opaque, Decodable, Decoder, Encodable, Encoder};
 use rustc_session::config::{CrateType, OptLevel};
@@ -1125,6 +1125,16 @@ fn should_encode_trait_impl_trait_tys<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) ->
     })
 }
 
+fn should_encode_fn_rpitits<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> bool {
+    match tcx.def_kind(def_id) {
+        DefKind::Fn | DefKind::AssocFn => {
+            tcx.def_kind(tcx.parent(def_id)) == DefKind::Trait
+                && tcx.hir().get_fn_output(def_id.expect_local()).is_some()
+        }
+        _ => false,
+    }
+}
+
 impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
     fn encode_attrs(&mut self, def_id: LocalDefId) {
         let tcx = self.tcx;
@@ -1205,6 +1215,10 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
                 && let Ok(table) = self.tcx.collect_trait_impl_trait_tys(def_id)
             {
                 record!(self.tables.trait_impl_trait_tys[def_id] <- table);
+            }
+            if should_encode_fn_rpitits(tcx, def_id) {
+                let table = self.tcx.assoc_items_for_rpits(def_id);
+                record!(self.tables.assoc_items_for_rpits[def_id] <- table);
             }
         }
         let inherent_impls = tcx.crate_inherent_impls(());

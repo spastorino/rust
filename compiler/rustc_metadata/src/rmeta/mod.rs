@@ -406,6 +406,7 @@ define_tables! {
     deduced_param_attrs: Table<DefIndex, LazyArray<DeducedParamAttrs>>,
 
     trait_impl_trait_tys: Table<DefIndex, LazyValue<FxHashMap<DefId, Ty<'static>>>>,
+    assoc_items_for_rpits: Table<DefIndex, LazyValue<&'static [DefId]>>,
 }
 
 #[derive(TyEncodable, TyDecodable)]

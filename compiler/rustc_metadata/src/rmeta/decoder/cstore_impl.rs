@@ -233,6 +233,16 @@ provide! { tcx, def_id, other, cdata,
             .process_decoded(tcx, || panic!("{:?} does not have trait_impl_trait_tys", def_id)))
      }
 
+    assoc_items_for_rpits => {
+        cdata
+            .root
+            .tables
+            .assoc_items_for_rpits
+            .get(cdata, def_id.index)
+            .map(|lazy| lazy.decode((cdata, tcx)))
+            .process_decoded(tcx, || panic!("{:?} does not have associated items for rpits", def_id))
+    }
+
     visibility => { cdata.get_visibility(def_id.index) }
     adt_def => { cdata.get_adt_def(def_id.index, tcx) }
     adt_destructor => {
