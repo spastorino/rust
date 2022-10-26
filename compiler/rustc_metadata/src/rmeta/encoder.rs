@@ -1124,6 +1124,10 @@ fn should_encode_trait_impl_trait_tys<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) ->
     })
 }
 
+fn should_encode_fn_rpits<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> bool {
+    tcx.def_kind(def_id) == DefKind::Fn && tcx.hir().get_fn_output(def_id.expect_local()).is_some()
+}
+
 impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
     fn encode_attrs(&mut self, def_id: LocalDefId) {
         let tcx = self.tcx;
@@ -1204,6 +1208,10 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
                 && let Ok(table) = self.tcx.collect_trait_impl_trait_tys(def_id)
             {
                 record!(self.tables.trait_impl_trait_tys[def_id] <- table);
+            }
+            if should_encode_fn_rpits(tcx, def_id) {
+                let table = self.tcx.get_fn_rpits(def_id);
+                record!(self.tables.get_fn_rpits[def_id] <- table);
             }
         }
         let inherent_impls = tcx.crate_inherent_impls(());

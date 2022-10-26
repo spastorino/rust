@@ -848,6 +848,33 @@ impl<'hir> Map<'hir> {
         }
     }
 
+    pub fn get_fn_output(self, id: LocalDefId) -> Option<&'hir FnRetTy<'hir>> {
+        match self.tcx.hir_owner(OwnerId { def_id: id }) {
+            Some(Owner { node: OwnerNode::Item(item), .. }) => {
+                if let ItemKind::Fn(FnSig { decl: FnDecl { output, .. }, .. }, ..) = item.kind {
+                    return Some(output);
+                }
+            }
+            Some(Owner { node: OwnerNode::TraitItem(item), .. }) => {
+                if let TraitItemKind::Fn(FnSig { decl: FnDecl { output, .. }, .. }, ..) = item.kind
+                {
+                    return Some(output);
+                }
+            }
+            Some(Owner { node: OwnerNode::ImplItem(item), .. }) => {
+                if let ImplItemKind::Fn(FnSig { decl: FnDecl { output, .. }, .. }, ..) = item.kind {
+                    return Some(output);
+                }
+            }
+            _ => {}// bug!(
+                 //"expected trait/impl item, found {}",
+                 //self.node_to_string(HirId::make_owner(id))
+            //),
+        }
+
+        None
+    }
+
     pub fn expect_variant(self, id: HirId) -> &'hir Variant<'hir> {
         match self.find(id) {
             Some(Node::Variant(variant)) => variant,

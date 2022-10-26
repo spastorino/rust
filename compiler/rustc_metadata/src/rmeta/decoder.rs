@@ -656,6 +656,12 @@ impl<'a, 'tcx> Decodable<DecodeContext<'a, 'tcx>> for &'tcx [(ty::Predicate<'tcx
     }
 }
 
+impl<'a, 'tcx> Decodable<DecodeContext<'a, 'tcx>> for &'tcx [DefId] {
+    fn decode(d: &mut DecodeContext<'a, 'tcx>) -> Self {
+        ty::codec::RefDecodable::decode(d)
+    }
+}
+
 impl<'a, 'tcx, T> Decodable<DecodeContext<'a, 'tcx>> for LazyValue<T> {
     fn decode(decoder: &mut DecodeContext<'a, 'tcx>) -> Self {
         decoder.read_lazy()

@@ -739,6 +739,13 @@ rustc_queries! {
         desc { |tcx| "comparing impl items against trait for `{}`", tcx.def_path_str(impl_id) }
     }
 
+    /// Given an `fn_def_id`, return the list of rpits returned by the function.
+    query get_fn_rpits(fn_def_id: DefId) -> &'tcx [DefId] {
+        desc { |tcx| "computing rpits returned by `{}`", tcx.def_path_str(fn_def_id) }
+        cache_on_disk_if { fn_def_id.is_local() }
+        separate_provide_extern
+    }
+
     /// Given an `impl_id`, return the trait it implements.
     /// Return `None` if this is an inherent impl.
     query impl_trait_ref(impl_id: DefId) -> Option<ty::TraitRef<'tcx>> {

@@ -234,6 +234,16 @@ provide! { tcx, def_id, other, cdata,
             .process_decoded(tcx, || panic!("{:?} does not have trait_impl_trait_tys", def_id)))
      }
 
+    get_fn_rpits => {
+        cdata
+            .root
+            .tables
+            .get_fn_rpits
+            .get(cdata, def_id.index)
+            .map(|lazy| lazy.decode((cdata, tcx)))
+            .process_decoded(tcx, || panic!("{:?} does not have get_fn_rpits", def_id))
+    }
+
     visibility => { cdata.get_visibility(def_id.index) }
     adt_def => { cdata.get_adt_def(def_id.index, tcx) }
     adt_destructor => {

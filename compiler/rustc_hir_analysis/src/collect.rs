@@ -76,6 +76,7 @@ pub fn provide(providers: &mut Providers) {
         trait_def,
         adt_def,
         fn_sig,
+        get_fn_rpits,
         impl_trait_ref,
         impl_polarity,
         is_foreign_item,
@@ -1271,6 +1272,29 @@ fn infer_return_ty_for_fn_sig<'tcx>(
             None,
         ),
     }
+}
+
+fn get_fn_rpits(tcx: TyCtxt<'_>, fn_def_id: DefId) -> &'_ [DefId] {
+    struct RPITVisitor {
+        rpits: Vec<DefId>,
+    }
+
+    impl<'v> Visitor<'v> for RPITVisitor {
+        fn visit_ty(&mut self, ty: &'v hir::Ty<'v>) {
+            if let hir::TyKind::OpaqueDef(item_id, _, _) = ty.kind {
+                self.rpits.push(item_id.def_id.def_id.to_def_id())
+            }
+            intravisit::walk_ty(self, ty)
+        }
+    }
+
+    let mut visitor = RPITVisitor { rpits: Vec::new() };
+
+    if let Some(output) = tcx.hir().get_fn_output(fn_def_id.expect_local()) {
+        visitor.visit_fn_ret_ty(output);
+    }
+
+    tcx.arena.alloc_from_iter(visitor.rpits.into_iter())
 }
 
 fn impl_trait_ref(tcx: TyCtxt<'_>, def_id: DefId) -> Option<ty::TraitRef<'_>> {
