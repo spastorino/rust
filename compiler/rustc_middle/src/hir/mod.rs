@@ -149,9 +149,13 @@ pub fn provide(providers: &mut Providers) {
     providers.source_span =
         |tcx, def_id| tcx.resolutions(()).source_span.get(def_id).copied().unwrap_or(DUMMY_SP);
     providers.def_span = |tcx, def_id| {
-        let def_id = def_id.expect_local();
-        let hir_id = tcx.hir().local_def_id_to_hir_id(def_id);
-        tcx.hir().opt_span(hir_id).unwrap_or(DUMMY_SP)
+        if tcx.def_path(def_id).get_impl_trait_in_trait_data().is_some() {
+            DUMMY_SP
+        } else {
+            let def_id = def_id.expect_local();
+            let hir_id = tcx.hir().local_def_id_to_hir_id(def_id);
+            tcx.hir().opt_span(hir_id).unwrap_or(DUMMY_SP)
+        }
     };
     providers.def_ident_span = |tcx, def_id| {
         let def_id = def_id.expect_local();

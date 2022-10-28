@@ -440,8 +440,7 @@ impl DefPathData {
             ClosureExpr => DefPathDataName::Anon { namespace: sym::closure },
             Ctor => DefPathDataName::Anon { namespace: sym::constructor },
             AnonConst => DefPathDataName::Anon { namespace: sym::constant },
-            ImplTrait => DefPathDataName::Anon { namespace: sym::opaque },
-            ImplTraitInTrait(..) => DefPathDataName::Anon { namespace: sym::opaque },
+            ImplTrait | ImplTraitInTrait(..) => DefPathDataName::Anon { namespace: sym::opaque },
         }
     }
 }

@@ -1,7 +1,9 @@
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
+use rustc_hir::definitions::DefPathData;
 use rustc_middle::ty::{self, TyCtxt};
+use rustc_span::symbol::kw;
 
 pub fn provide(providers: &mut ty::query::Providers) {
     *providers = ty::query::Providers {
@@ -14,14 +16,44 @@ pub fn provide(providers: &mut ty::query::Providers) {
 }
 
 fn associated_item_def_ids(tcx: TyCtxt<'_>, def_id: DefId) -> &[DefId] {
-    let item = tcx.hir().expect_item(def_id.expect_local());
+    let local_def_id = def_id.expect_local();
+    let item = tcx.hir().expect_item(local_def_id);
+
     match item.kind {
         hir::ItemKind::Trait(.., ref trait_item_refs) => tcx.arena.alloc_from_iter(
             trait_item_refs.iter().map(|trait_item_ref| trait_item_ref.id.owner_id.to_def_id()),
         ),
-        hir::ItemKind::Impl(ref impl_) => tcx.arena.alloc_from_iter(
-            impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()),
-        ),
+        hir::ItemKind::Impl(ref impl_) => tcx.arena.alloc_from_iter({
+            impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()).chain(
+                impl_.of_trait.iter().flat_map(|_| {
+                    impl_
+                        .items
+                        .iter()
+                        .filter(|impl_item_ref| {
+                            matches!(impl_item_ref.kind, hir::AssocItemKind::Fn { .. })
+                        })
+                        .flat_map(|impl_item_ref| {
+                            let impl_fn_def_id = impl_item_ref.id.owner_id.def_id.to_def_id();
+                            impl_item_ref.trait_item_def_id.iter().flat_map(
+                                move |trait_fn_def_id| {
+                                    tcx.get_fn_rpits(trait_fn_def_id).iter().map(
+                                        move |trait_rpit_def_id| {
+                                            tcx.create_def(
+                                                local_def_id,
+                                                DefPathData::ImplTraitInTrait(
+                                                    impl_fn_def_id,
+                                                    Some(*trait_rpit_def_id),
+                                                ),
+                                            )
+                                            .to_def_id()
+                                        },
+                                    )
+                                },
+                            )
+                        })
+                }),
+            )
+        }),
         hir::ItemKind::TraitAlias(..) => &[],
         _ => span_bug!(item.span, "associated_item_def_ids: not impl or trait"),
     }
@@ -42,9 +74,30 @@ fn impl_item_implementor_ids(tcx: TyCtxt<'_>, impl_id: DefId) -> FxHashMap<DefId
 
 fn associated_item(tcx: TyCtxt<'_>, def_id: DefId) -> ty::AssocItem {
     debug!("associated_item: def_id={:?}", def_id);
+    debug!("associated_item: def_path={:?}", tcx.def_path(def_id));
+    debug!(
+        "associated_item: def_path.get_impl_trait_in_trait_data={:?}",
+        tcx.def_path(def_id).get_impl_trait_in_trait_data()
+    );
+    if let Some((_, trait_or_impl)) = tcx.def_path(def_id).get_impl_trait_in_trait_data() {
+        let (container, trait_item_def_id) = if let Some(trait_rpit_def_id) = trait_or_impl {
+            (ty::ImplContainer, Some(trait_rpit_def_id))
+        } else {
+            (ty::TraitContainer, None)
+        };
+
+        return ty::AssocItem {
+            name: kw::Empty,
+            kind: ty::AssocKind::Type,
+            def_id,
+            trait_item_def_id,
+            container,
+            fn_has_self_parameter: false,
+        };
+    }
+
     let id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
     let parent_def_id = tcx.hir().get_parent_item(id);
-    debug!("associated_item: parent_def_id={:?}", parent_def_id);
     let parent_item = tcx.hir().expect_item(parent_def_id.def_id);
     match parent_item.kind {
         hir::ItemKind::Impl(ref impl_) => {

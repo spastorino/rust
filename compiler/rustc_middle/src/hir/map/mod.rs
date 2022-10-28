@@ -201,6 +201,10 @@ impl<'hir> Map<'hir> {
 
     /// Do not call this function directly. The query should be called.
     pub(super) fn opt_def_kind(self, local_def_id: LocalDefId) -> Option<DefKind> {
+        if self.tcx.def_path(local_def_id.to_def_id()).get_impl_trait_in_trait_data().is_some() {
+            return Some(DefKind::OpaqueTy);
+        }
+
         let hir_id = self.local_def_id_to_hir_id(local_def_id);
         let def_kind = match self.find(hir_id)? {
             Node::Item(item) => match item.kind {

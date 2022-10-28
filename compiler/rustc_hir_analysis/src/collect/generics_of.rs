@@ -14,159 +14,176 @@ use rustc_span::Span;
 pub(super) fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::Generics {
     use rustc_hir::*;
 
-    let hir_id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
-
-    let node = tcx.hir().get(hir_id);
-    let parent_def_id = match node {
-        Node::ImplItem(_)
-        | Node::TraitItem(_)
-        | Node::Variant(_)
-        | Node::Ctor(..)
-        | Node::Field(_) => {
-            let parent_id = tcx.hir().get_parent_item(hir_id);
-            Some(parent_id.to_def_id())
+    let (node, parent_def_id) = if let Some((fn_def_id, trait_or_impl)) =
+        tcx.def_path(def_id).get_impl_trait_in_trait_data()
+    {
+        if trait_or_impl.is_some() {
+            (None, Some(fn_def_id))
+        } else {
+            let hir_id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
+            let node = tcx.hir().get(hir_id);
+            (Some(node), Some(fn_def_id))
         }
-        // FIXME(#43408) always enable this once `lazy_normalization` is
-        // stable enough and does not need a feature gate anymore.
-        Node::AnonConst(_) => {
-            let parent_def_id = tcx.hir().get_parent_item(hir_id);
+    } else {
+        let hir_id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
 
-            let mut in_param_ty = false;
-            for (_parent, node) in tcx.hir().parent_iter(hir_id) {
-                if let Some(generics) = node.generics() {
-                    let mut visitor = AnonConstInParamTyDetector {
-                        in_param_ty: false,
-                        found_anon_const_in_param_ty: false,
-                        ct: hir_id,
-                    };
-
-                    visitor.visit_generics(generics);
-                    in_param_ty = visitor.found_anon_const_in_param_ty;
-                    break;
-                }
-            }
-
-            if in_param_ty {
-                // We do not allow generic parameters in anon consts if we are inside
-                // of a const parameter type, e.g. `struct Foo<const N: usize, const M: [u8; N]>` is not allowed.
-                None
-            } else if tcx.lazy_normalization() {
-                if let Some(param_id) = tcx.hir().opt_const_param_default_param_def_id(hir_id) {
-                    // If the def_id we are calling generics_of on is an anon ct default i.e:
-                    //
-                    // struct Foo<const N: usize = { .. }>;
-                    //        ^^^       ^          ^^^^^^ def id of this anon const
-                    //        ^         ^ param_id
-                    //        ^ parent_def_id
-                    //
-                    // then we only want to return generics for params to the left of `N`. If we don't do that we
-                    // end up with that const looking like: `ty::ConstKind::Unevaluated(def_id, substs: [N#0])`.
-                    //
-                    // This causes ICEs (#86580) when building the substs for Foo in `fn foo() -> Foo { .. }` as
-                    // we substitute the defaults with the partially built substs when we build the substs. Subst'ing
-                    // the `N#0` on the unevaluated const indexes into the empty substs we're in the process of building.
-                    //
-                    // We fix this by having this function return the parent's generics ourselves and truncating the
-                    // generics to only include non-forward declared params (with the exception of the `Self` ty)
-                    //
-                    // For the above code example that means we want `substs: []`
-                    // For the following struct def we want `substs: [N#0]` when generics_of is called on
-                    // the def id of the `{ N + 1 }` anon const
-                    // struct Foo<const N: usize, const M: usize = { N + 1 }>;
-                    //
-                    // This has some implications for how we get the predicates available to the anon const
-                    // see `explicit_predicates_of` for more information on this
-                    let generics = tcx.generics_of(parent_def_id.to_def_id());
-                    let param_def_idx = generics.param_def_id_to_index[&param_id.to_def_id()];
-                    // In the above example this would be .params[..N#0]
-                    let params = generics.params[..param_def_idx as usize].to_owned();
-                    let param_def_id_to_index =
-                        params.iter().map(|param| (param.def_id, param.index)).collect();
-
-                    return ty::Generics {
-                        // we set the parent of these generics to be our parent's parent so that we
-                        // dont end up with substs: [N, M, N] for the const default on a struct like this:
-                        // struct Foo<const N: usize, const M: usize = { ... }>;
-                        parent: generics.parent,
-                        parent_count: generics.parent_count,
-                        params,
-                        param_def_id_to_index,
-                        has_self: generics.has_self,
-                        has_late_bound_regions: generics.has_late_bound_regions,
-                    };
-                }
-
-                // HACK(eddyb) this provides the correct generics when
-                // `feature(generic_const_expressions)` is enabled, so that const expressions
-                // used with const generics, e.g. `Foo<{N+1}>`, can work at all.
-                //
-                // Note that we do not supply the parent generics when using
-                // `min_const_generics`.
-                Some(parent_def_id.to_def_id())
-            } else {
-                let parent_node = tcx.hir().get(tcx.hir().get_parent_node(hir_id));
-                match parent_node {
-                    // HACK(eddyb) this provides the correct generics for repeat
-                    // expressions' count (i.e. `N` in `[x; N]`), and explicit
-                    // `enum` discriminants (i.e. `D` in `enum Foo { Bar = D }`),
-                    // as they shouldn't be able to cause query cycle errors.
-                    Node::Expr(&Expr { kind: ExprKind::Repeat(_, ref constant), .. })
-                        if constant.hir_id() == hir_id =>
-                    {
-                        Some(parent_def_id.to_def_id())
-                    }
-                    Node::Variant(Variant { disr_expr: Some(ref constant), .. })
-                        if constant.hir_id == hir_id =>
-                    {
-                        Some(parent_def_id.to_def_id())
-                    }
-                    Node::Expr(&Expr { kind: ExprKind::ConstBlock(_), .. }) => {
-                        Some(tcx.typeck_root_def_id(def_id))
-                    }
-                    // Exclude `GlobalAsm` here which cannot have generics.
-                    Node::Expr(&Expr { kind: ExprKind::InlineAsm(asm), .. })
-                        if asm.operands.iter().any(|(op, _op_sp)| match op {
-                            hir::InlineAsmOperand::Const { anon_const }
-                            | hir::InlineAsmOperand::SymFn { anon_const } => {
-                                anon_const.hir_id == hir_id
-                            }
-                            _ => false,
-                        }) =>
-                    {
-                        Some(parent_def_id.to_def_id())
-                    }
-                    _ => None,
-                }
-            }
-        }
-        Node::Expr(&hir::Expr { kind: hir::ExprKind::Closure { .. }, .. }) => {
-            Some(tcx.typeck_root_def_id(def_id))
-        }
-        Node::Item(item) => match item.kind {
-            ItemKind::OpaqueTy(hir::OpaqueTy {
-                origin:
-                    hir::OpaqueTyOrigin::FnReturn(fn_def_id) | hir::OpaqueTyOrigin::AsyncFn(fn_def_id),
-                in_trait,
-                ..
-            }) => {
-                if in_trait {
-                    assert!(matches!(tcx.def_kind(fn_def_id), DefKind::AssocFn))
-                } else {
-                    assert!(matches!(tcx.def_kind(fn_def_id), DefKind::AssocFn | DefKind::Fn))
-                }
-                Some(fn_def_id.to_def_id())
-            }
-            ItemKind::OpaqueTy(hir::OpaqueTy { origin: hir::OpaqueTyOrigin::TyAlias, .. }) => {
+        let node = tcx.hir().get(hir_id);
+        let parent_def_id = match node {
+            Node::ImplItem(_)
+            | Node::TraitItem(_)
+            | Node::Variant(_)
+            | Node::Ctor(..)
+            | Node::Field(_) => {
                 let parent_id = tcx.hir().get_parent_item(hir_id);
-                assert_ne!(parent_id, hir::CRATE_OWNER_ID);
-                debug!("generics_of: parent of opaque ty {:?} is {:?}", def_id, parent_id);
-                // Opaque types are always nested within another item, and
-                // inherit the generics of the item.
                 Some(parent_id.to_def_id())
             }
+            // FIXME(#43408) always enable this once `lazy_normalization` is
+            // stable enough and does not need a feature gate anymore.
+            Node::AnonConst(_) => {
+                let parent_def_id = tcx.hir().get_parent_item(hir_id);
+
+                let mut in_param_ty = false;
+                for (_parent, node) in tcx.hir().parent_iter(hir_id) {
+                    if let Some(generics) = node.generics() {
+                        let mut visitor = AnonConstInParamTyDetector {
+                            in_param_ty: false,
+                            found_anon_const_in_param_ty: false,
+                            ct: hir_id,
+                        };
+
+                        visitor.visit_generics(generics);
+                        in_param_ty = visitor.found_anon_const_in_param_ty;
+                        break;
+                    }
+                }
+
+                if in_param_ty {
+                    // We do not allow generic parameters in anon consts if we are inside
+                    // of a const parameter type, e.g. `struct Foo<const N: usize, const M: [u8; N]>` is not allowed.
+                    None
+                } else if tcx.lazy_normalization() {
+                    if let Some(param_id) = tcx.hir().opt_const_param_default_param_def_id(hir_id) {
+                        // If the def_id we are calling generics_of on is an anon ct default i.e:
+                        //
+                        // struct Foo<const N: usize = { .. }>;
+                        //        ^^^       ^          ^^^^^^ def id of this anon const
+                        //        ^         ^ param_id
+                        //        ^ parent_def_id
+                        //
+                        // then we only want to return generics for params to the left of `N`. If we don't do that we
+                        // end up with that const looking like: `ty::ConstKind::Unevaluated(def_id, substs: [N#0])`.
+                        //
+                        // This causes ICEs (#86580) when building the substs for Foo in `fn foo() -> Foo { .. }` as
+                        // we substitute the defaults with the partially built substs when we build the substs. Subst'ing
+                        // the `N#0` on the unevaluated const indexes into the empty substs we're in the process of building.
+                        //
+                        // We fix this by having this function return the parent's generics ourselves and truncating the
+                        // generics to only include non-forward declared params (with the exception of the `Self` ty)
+                        //
+                        // For the above code example that means we want `substs: []`
+                        // For the following struct def we want `substs: [N#0]` when generics_of is called on
+                        // the def id of the `{ N + 1 }` anon const
+                        // struct Foo<const N: usize, const M: usize = { N + 1 }>;
+                        //
+                        // This has some implications for how we get the predicates available to the anon const
+                        // see `explicit_predicates_of` for more information on this
+                        let generics = tcx.generics_of(parent_def_id.to_def_id());
+                        let param_def_idx = generics.param_def_id_to_index[&param_id.to_def_id()];
+                        // In the above example this would be .params[..N#0]
+                        let params = generics.params[..param_def_idx as usize].to_owned();
+                        let param_def_id_to_index =
+                            params.iter().map(|param| (param.def_id, param.index)).collect();
+
+                        return ty::Generics {
+                            // we set the parent of these generics to be our parent's parent so that we
+                            // dont end up with substs: [N, M, N] for the const default on a struct like this:
+                            // struct Foo<const N: usize, const M: usize = { ... }>;
+                            parent: generics.parent,
+                            parent_count: generics.parent_count,
+                            params,
+                            param_def_id_to_index,
+                            has_self: generics.has_self,
+                            has_late_bound_regions: generics.has_late_bound_regions,
+                        };
+                    }
+
+                    // HACK(eddyb) this provides the correct generics when
+                    // `feature(generic_const_expressions)` is enabled, so that const expressions
+                    // used with const generics, e.g. `Foo<{N+1}>`, can work at all.
+                    //
+                    // Note that we do not supply the parent generics when using
+                    // `min_const_generics`.
+                    Some(parent_def_id.to_def_id())
+                } else {
+                    let parent_node = tcx.hir().get(tcx.hir().get_parent_node(hir_id));
+                    match parent_node {
+                        // HACK(eddyb) this provides the correct generics for repeat
+                        // expressions' count (i.e. `N` in `[x; N]`), and explicit
+                        // `enum` discriminants (i.e. `D` in `enum Foo { Bar = D }`),
+                        // as they shouldn't be able to cause query cycle errors.
+                        Node::Expr(&Expr { kind: ExprKind::Repeat(_, ref constant), .. })
+                            if constant.hir_id() == hir_id =>
+                        {
+                            Some(parent_def_id.to_def_id())
+                        }
+                        Node::Variant(Variant { disr_expr: Some(ref constant), .. })
+                            if constant.hir_id == hir_id =>
+                        {
+                            Some(parent_def_id.to_def_id())
+                        }
+                        Node::Expr(&Expr { kind: ExprKind::ConstBlock(_), .. }) => {
+                            Some(tcx.typeck_root_def_id(def_id))
+                        }
+                        // Exclude `GlobalAsm` here which cannot have generics.
+                        Node::Expr(&Expr { kind: ExprKind::InlineAsm(asm), .. })
+                            if asm.operands.iter().any(|(op, _op_sp)| match op {
+                                hir::InlineAsmOperand::Const { anon_const }
+                                | hir::InlineAsmOperand::SymFn { anon_const } => {
+                                    anon_const.hir_id == hir_id
+                                }
+                                _ => false,
+                            }) =>
+                        {
+                            Some(parent_def_id.to_def_id())
+                        }
+                        _ => None,
+                    }
+                }
+            }
+            Node::Expr(&hir::Expr { kind: hir::ExprKind::Closure { .. }, .. }) => {
+                Some(tcx.typeck_root_def_id(def_id))
+            }
+            Node::Item(item) => match item.kind {
+                ItemKind::OpaqueTy(hir::OpaqueTy {
+                    origin:
+                        hir::OpaqueTyOrigin::FnReturn(fn_def_id)
+                        | hir::OpaqueTyOrigin::AsyncFn(fn_def_id),
+                    in_trait,
+                    ..
+                }) => {
+                    if in_trait {
+                        assert!(matches!(tcx.def_kind(fn_def_id), DefKind::AssocFn))
+                    } else {
+                        assert!(matches!(tcx.def_kind(fn_def_id), DefKind::AssocFn | DefKind::Fn))
+                    }
+                    Some(fn_def_id.to_def_id())
+                }
+                ItemKind::OpaqueTy(hir::OpaqueTy {
+                    origin: hir::OpaqueTyOrigin::TyAlias, ..
+                }) => {
+                    let parent_id = tcx.hir().get_parent_item(hir_id);
+                    assert_ne!(parent_id, hir::CRATE_OWNER_ID);
+                    debug!("generics_of: parent of opaque ty {:?} is {:?}", def_id, parent_id);
+                    // Opaque types are always nested within another item, and
+                    // inherit the generics of the item.
+                    Some(parent_id.to_def_id())
+                }
+                _ => None,
+            },
             _ => None,
-        },
-        _ => None,
+        };
+
+        (Some(node), parent_def_id)
     };
 
     enum Defaults {
@@ -177,9 +194,9 @@ pub(super) fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::Generics {
     }
 
     let no_generics = hir::Generics::empty();
-    let ast_generics = node.generics().unwrap_or(&no_generics);
+    let ast_generics = node.and_then(|node| node.generics()).unwrap_or(&no_generics);
     let (opt_self, allow_defaults) = match node {
-        Node::Item(item) => {
+        Some(Node::Item(item)) => {
             match item.kind {
                 ItemKind::Trait(..) | ItemKind::TraitAlias(..) => {
                     // Add in the self type parameter.
@@ -209,10 +226,10 @@ pub(super) fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::Generics {
         }
 
         // GATs
-        Node::TraitItem(item) if matches!(item.kind, TraitItemKind::Type(..)) => {
+        Some(Node::TraitItem(item)) if matches!(item.kind, TraitItemKind::Type(..)) => {
             (None, Defaults::Deny)
         }
-        Node::ImplItem(item) if matches!(item.kind, ImplItemKind::Type(..)) => {
+        Some(Node::ImplItem(item)) if matches!(item.kind, ImplItemKind::Type(..)) => {
             (None, Defaults::Deny)
         }
 
@@ -312,10 +329,10 @@ pub(super) fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::Generics {
     // provide junk type parameter defs - the only place that
     // cares about anything but the length is instantiation,
     // and we don't do that for closures.
-    if let Node::Expr(&hir::Expr {
+    if let Some(Node::Expr(&hir::Expr {
         kind: hir::ExprKind::Closure(hir::Closure { movability: gen, .. }),
         ..
-    }) = node
+    })) = node
     {
         let dummy_args = if gen.is_some() {
             &["<resume_ty>", "<yield_ty>", "<return_ty>", "<witness>", "<upvars>"][..]
@@ -333,7 +350,8 @@ pub(super) fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::Generics {
     }
 
     // provide junk type parameter defs for const blocks.
-    if let Node::AnonConst(_) = node {
+    if let Some(Node::AnonConst(_)) = node {
+        let hir_id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
         let parent_node = tcx.hir().get(tcx.hir().get_parent_node(hir_id));
         if let Node::Expr(&Expr { kind: ExprKind::ConstBlock(_), .. }) = parent_node {
             params.push(ty::GenericParamDef {
@@ -347,6 +365,7 @@ pub(super) fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::Generics {
     }
 
     let param_def_id_to_index = params.iter().map(|param| (param.def_id, param.index)).collect();
+    let has_late_bound_regions = node.map(|node| has_late_bound_regions(tcx, node)).unwrap_or(None);
 
     ty::Generics {
         parent: parent_def_id,
@@ -354,7 +373,7 @@ pub(super) fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::Generics {
         params,
         param_def_id_to_index,
         has_self: has_self || parent_has_self,
-        has_late_bound_regions: has_late_bound_regions(tcx, node),
+        has_late_bound_regions,
     }
 }
 

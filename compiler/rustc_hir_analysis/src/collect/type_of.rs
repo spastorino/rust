@@ -242,9 +242,25 @@ fn get_path_containing_arg_in_pat<'hir>(
 }
 
 pub(super) fn type_of(tcx: TyCtxt<'_>, def_id: DefId) -> Ty<'_> {
-    let def_id = def_id.expect_local();
     use rustc_hir::*;
 
+    debug!("type_of: def_id={:?}", def_id);
+    if let Some((fn_def_id, trait_or_impl)) = tcx.def_path(def_id).get_impl_trait_in_trait_data() {
+        debug!("type_of: fn_def_id={:?}", fn_def_id);
+        if let Some(trait_rpit_def_id) = trait_or_impl {
+            match tcx.collect_trait_impl_trait_tys(fn_def_id) {
+                Ok(map) => {
+                    debug!("type_of: collect_trait_impl_trait_tys map={:?}", map);
+                    return map[&trait_rpit_def_id];
+                }
+                Err(_) => {
+                    return tcx.ty_error();
+                }
+            }
+        }
+    }
+
+    let def_id = def_id.expect_local();
     let hir_id = tcx.hir().local_def_id_to_hir_id(def_id);
 
     let icx = ItemCtxt::new(tcx, def_id.to_def_id());

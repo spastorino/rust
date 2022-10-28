@@ -2806,7 +2806,26 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         });
         debug!("impl_trait_ty_to_ty: substs={:?}", substs);
 
-        if in_trait { tcx.mk_projection(def_id, substs) } else { tcx.mk_opaque(def_id, substs) }
+        let ret = if in_trait {
+            tcx.mk_projection(def_id, substs)
+        } else {
+            tcx.mk_opaque(def_id, substs)
+        };
+
+        match ret.kind() {
+            ty::Opaque(def_id, substs) => {
+                debug!("impl_trait_ty_to_ty: OpaqueDef def_id={:?}, substs={:?}", def_id, substs)
+            }
+            ty::Projection(ty::ProjectionTy { item_def_id, substs }) => {
+                debug!(
+                    "impl_trait_ty_to_ty: Projection def_id={:?}, substs={:?}",
+                    item_def_id, substs
+                )
+            }
+            output => debug!("impl_trait_ty_to_ty: trait_sig = {:?}", output),
+        }
+
+        ret
     }
 
     pub fn ty_of_arg(&self, ty: &hir::Ty<'_>, expected_ty: Option<Ty<'tcx>>) -> Ty<'tcx> {

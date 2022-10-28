@@ -1038,11 +1038,13 @@ fn should_encode_type(tcx: TyCtxt<'_>, def_id: LocalDefId, def_kind: DefKind) ->
 
         DefKind::AssocTy => {
             let assoc_item = tcx.associated_item(def_id);
+            debug!("should_encode_type: assoc_item={:?}", assoc_item);
             match assoc_item.container {
                 ty::AssocItemContainer::ImplContainer => true,
                 ty::AssocItemContainer::TraitContainer => assoc_item.defaultness(tcx).has_value(),
             }
         }
+
         DefKind::TyParam => {
             let hir::Node::GenericParam(param) = tcx.hir().get_by_def_id(def_id) else { bug!() };
             let hir::GenericParamKind::Type { default, .. } = param.kind else { bug!() };
@@ -1125,7 +1127,10 @@ fn should_encode_trait_impl_trait_tys<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) ->
 }
 
 fn should_encode_fn_rpits<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> bool {
-    tcx.def_kind(def_id) == DefKind::Fn && tcx.hir().get_fn_output(def_id.expect_local()).is_some()
+    match tcx.def_kind(def_id) {
+        DefKind::Fn | DefKind::AssocFn => tcx.hir().get_fn_output(def_id.expect_local()).is_some(),
+        _ => false,
+    }
 }
 
 impl<'a, 'tcx> EncodeContext<'a, 'tcx> {

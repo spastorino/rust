@@ -1282,7 +1282,7 @@ fn get_fn_rpits(tcx: TyCtxt<'_>, fn_def_id: DefId) -> &'_ [DefId] {
     impl<'v> Visitor<'v> for RPITVisitor {
         fn visit_ty(&mut self, ty: &'v hir::Ty<'v>) {
             if let hir::TyKind::OpaqueDef(item_id, _, _) = ty.kind {
-                self.rpits.push(item_id.def_id.def_id.to_def_id())
+                self.rpits.push(item_id.owner_id.def_id.to_def_id())
             }
             intravisit::walk_ty(self, ty)
         }

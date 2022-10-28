@@ -267,10 +267,34 @@ fn compare_predicate_entailment<'tcx>(
 
     let norm_cause = ObligationCause::misc(impl_m_span, impl_m_hir_id);
     let impl_sig = ocx.normalize(norm_cause.clone(), param_env, impl_sig);
+
+    match impl_sig.output().kind() {
+        ty::Opaque(def_id, substs) => {
+            debug!("compare_method: impl_sig OpaqueDef def_id={:?}, substs={:?}", def_id, substs)
+        }
+        ty::Projection(ty::ProjectionTy { item_def_id, substs }) => {
+            debug!(
+                "compare_method: impl_sig Projection def_id={:?}, substs={:?}",
+                item_def_id, substs
+            )
+        }
+        output => debug!("compare_method: impl_sig = {:?}", output),
+    }
+
     let impl_fty = tcx.mk_fn_ptr(ty::Binder::dummy(impl_sig));
     debug!("compare_impl_method: impl_fty={:?}", impl_fty);
 
     let trait_sig = tcx.bound_fn_sig(trait_m.def_id).subst(tcx, trait_to_placeholder_substs);
+    match trait_sig.skip_binder().output().kind() {
+        ty::Opaque(def_id, substs) => {
+            debug!("compare_method: OpaqueDef def_id={:?}, substs={:?}", def_id, substs)
+        }
+        ty::Projection(ty::ProjectionTy { item_def_id, substs }) => {
+            debug!("compare_method: Projection def_id={:?}, substs={:?}", item_def_id, substs)
+        }
+        output => debug!("compare_method: trait_sig = {:?}", output),
+    }
+
     let trait_sig = tcx.liberate_late_bound_regions(impl_m.def_id, trait_sig);
 
     // Next, add all inputs and output as well-formed tys. Importantly,
@@ -278,6 +302,16 @@ fn compare_predicate_entailment<'tcx>(
     // not contain the input parameters. See issue #87748.
     wf_tys.extend(trait_sig.inputs_and_output.iter());
     let trait_sig = ocx.normalize(norm_cause, param_env, trait_sig);
+    match trait_sig.output().kind() {
+        ty::Opaque(def_id, substs) => {
+            debug!("compare_method: OpaqueDef def_id={:?}, substs={:?}", def_id, substs)
+        }
+        ty::Projection(ty::ProjectionTy { item_def_id, substs }) => {
+            debug!("compare_method: Projection def_id={:?}, substs={:?}", item_def_id, substs)
+        }
+        output => debug!("compare_method: trait_sig = {:?}", output),
+    }
+
     // We also have to add the normalized trait signature
     // as we don't normalize during implied bounds computation.
     wf_tys.extend(trait_sig.inputs_and_output.iter());
@@ -345,12 +379,12 @@ fn compare_predicate_entailment<'tcx>(
 #[instrument(skip(tcx), level = "debug", ret)]
 pub fn collect_trait_impl_trait_tys<'tcx>(
     tcx: TyCtxt<'tcx>,
-    def_id: DefId,
+    fn_def_id: DefId,
 ) -> Result<&'tcx FxHashMap<DefId, Ty<'tcx>>, ErrorGuaranteed> {
-    let impl_m = tcx.opt_associated_item(def_id).unwrap();
+    let impl_m = tcx.opt_associated_item(fn_def_id).unwrap();
     let trait_m = tcx.opt_associated_item(impl_m.trait_item_def_id.unwrap()).unwrap();
     let impl_trait_ref = tcx.impl_trait_ref(impl_m.impl_container(tcx).unwrap()).unwrap();
-    let param_env = tcx.param_env(def_id);
+    let param_env = tcx.param_env(fn_def_id);
 
     let trait_to_impl_substs = impl_trait_ref.substs;
 

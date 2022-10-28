@@ -247,9 +247,12 @@ impl<'tcx> MarkSymbolVisitor<'tcx> {
             // tuple struct constructor function
             let id = self.struct_constructors.get(&id).copied().unwrap_or(id);
 
-            if let Some(node) = self.tcx.hir().find_by_def_id(id) {
-                self.live_symbols.insert(id);
-                self.visit_node(node);
+            if let Some((_, _)) = self.tcx.def_path(id.to_def_id()).get_impl_trait_in_trait_data() {
+            } else {
+                if let Some(node) = self.tcx.hir().find_by_def_id(id) {
+                    self.live_symbols.insert(id);
+                    self.visit_node(node);
+                }
             }
         }
     }

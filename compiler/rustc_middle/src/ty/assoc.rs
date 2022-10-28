@@ -192,4 +192,12 @@ impl<'tcx> AssocItems<'tcx> {
             .filter(|item| item.kind.namespace() == ns)
             .find(|item| tcx.hygienic_eq(ident, item.ident(tcx), parent_def_id))
     }
+
+    /// Returns the associated items for the given `AssocKind`, if they exist.
+    pub fn filter_by<'this>(
+        &'this self,
+        pred: &'this dyn Fn(&(&Symbol, &&ty::AssocItem)) -> bool,
+    ) -> impl 'this + Iterator<Item = &ty::AssocItem> {
+        self.items.iter().filter(pred).map(|(_, item)| item).copied()
+    }
 }

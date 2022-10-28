@@ -31,7 +31,6 @@ use rustc_infer::infer::resolve::OpportunisticRegionResolver;
 use rustc_middle::traits::select::OverflowError;
 use rustc_middle::ty::fold::{TypeFoldable, TypeFolder, TypeSuperFoldable};
 use rustc_middle::ty::visit::{MaxUniverse, TypeVisitable};
-use rustc_middle::ty::DefIdTree;
 use rustc_middle::ty::{self, Term, ToPredicate, Ty, TyCtxt};
 use rustc_span::symbol::sym;
 
@@ -71,16 +70,6 @@ enum ProjectionCandidate<'tcx> {
 
     /// From an "impl" (or a "pseudo-impl" returned by select)
     Select(Selection<'tcx>),
-
-    ImplTraitInTrait(ImplTraitInTraitCandidate<'tcx>),
-}
-
-#[derive(PartialEq, Eq, Debug)]
-enum ImplTraitInTraitCandidate<'tcx> {
-    // The `impl Trait` from a trait function's default body
-    Trait,
-    // A concrete type provided from a trait's `impl Trait` from an impl
-    Impl(ImplSourceUserDefinedData<'tcx, PredicateObligation<'tcx>>),
 }
 
 enum ProjectionCandidateSet<'tcx> {
@@ -1274,7 +1263,9 @@ fn project<'cx, 'tcx>(
 
     let mut candidates = ProjectionCandidateSet::None;
 
-    assemble_candidate_for_impl_trait_in_trait(selcx, obligation, &mut candidates);
+    // FIXME: Remove, we don't need to do this anymore, is there an
+    // assemble_candidates_from_assoc_tys?
+    //assemble_candidate_for_impl_trait_in_trait(selcx, obligation, &mut candidates);
 
     // Make sure that the following procedures are kept in order. ParamEnv
     // needs to be first because it has highest priority, and Select checks
@@ -1311,65 +1302,6 @@ fn project<'cx, 'tcx>(
         // Inherent ambiguity that prevents us from even enumerating the
         // candidates.
         ProjectionCandidateSet::Ambiguous => Err(ProjectionError::TooManyCandidates),
-    }
-}
-
-/// If the predicate's item is an `ImplTraitPlaceholder`, we do a select on the
-/// corresponding trait ref. If this yields an `impl`, then we're able to project
-/// to a concrete type, since we have an `impl`'s method  to provide the RPITIT.
-fn assemble_candidate_for_impl_trait_in_trait<'cx, 'tcx>(
-    selcx: &mut SelectionContext<'cx, 'tcx>,
-    obligation: &ProjectionTyObligation<'tcx>,
-    candidate_set: &mut ProjectionCandidateSet<'tcx>,
-) {
-    let tcx = selcx.tcx();
-    if let Some((trait_fn_def_id, _)) =
-        tcx.def_path(obligation.predicate.item_def_id).get_impl_trait_in_trait_data()
-    {
-        // If we are trying to project an RPITIT with trait's default `Self` parameter,
-        // then we must be within a default trait body.
-        if obligation.predicate.self_ty()
-            == ty::InternalSubsts::identity_for_item(tcx, obligation.predicate.item_def_id)
-                .type_at(0)
-            && tcx.associated_item(trait_fn_def_id).defaultness(tcx).has_value()
-        {
-            candidate_set.push_candidate(ProjectionCandidate::ImplTraitInTrait(
-                ImplTraitInTraitCandidate::Trait,
-            ));
-            return;
-        }
-
-        let trait_def_id = tcx.parent(trait_fn_def_id);
-        let trait_substs =
-            obligation.predicate.substs.truncate_to(tcx, tcx.generics_of(trait_def_id));
-        // FIXME(named-returns): Binders
-        let trait_predicate =
-            ty::Binder::dummy(ty::TraitRef { def_id: trait_def_id, substs: trait_substs })
-                .to_poly_trait_predicate();
-
-        let _ = selcx.infcx().commit_if_ok(|_| {
-            match selcx.select(&obligation.with(tcx, trait_predicate)) {
-                Ok(Some(super::ImplSource::UserDefined(data))) => {
-                    candidate_set.push_candidate(ProjectionCandidate::ImplTraitInTrait(
-                        ImplTraitInTraitCandidate::Impl(data),
-                    ));
-                    Ok(())
-                }
-                Ok(None) => {
-                    candidate_set.mark_ambiguous();
-                    return Err(());
-                }
-                Ok(Some(_)) => {
-                    // Don't know enough about the impl to provide a useful signature
-                    return Err(());
-                }
-                Err(e) => {
-                    debug!(error = ?e, "selection error");
-                    candidate_set.mark_error(e);
-                    return Err(());
-                }
-            }
-        });
     }
 }
 
@@ -1535,6 +1467,15 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
     obligation: &ProjectionTyObligation<'tcx>,
     candidate_set: &mut ProjectionCandidateSet<'tcx>,
 ) {
+    match obligation.predicate {
+        ty::ProjectionTy { item_def_id, substs } => {
+            debug!(
+                "assemble_candidates_from_impls: Projection def_id={:?}, substs={:?}",
+                item_def_id, substs
+            )
+        }
+    }
+
     // Can't assemble candidate from impl for RPITIT
     if selcx
         .tcx()
@@ -1563,12 +1504,15 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
             }
         };
 
+        debug!("assemble_candidates_from_impls: impl_source={:?}", impl_source);
+
         let eligible = match &impl_source {
             super::ImplSource::Closure(_)
             | super::ImplSource::Generator(_)
             | super::ImplSource::FnPointer(_)
             | super::ImplSource::TraitAlias(_) => true,
             super::ImplSource::UserDefined(impl_data) => {
+                debug!("assemble_candidates_from_impls: impl_data={:?}", impl_data);
                 // We have to be careful when projecting out of an
                 // impl because of specialization. If we are not in
                 // codegen (i.e., projection mode is not "any"), and the
@@ -1594,6 +1538,7 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
                 let node_item =
                     assoc_def(selcx, impl_data.impl_def_id, obligation.predicate.item_def_id)
                         .map_err(|ErrorGuaranteed { .. }| ())?;
+                debug!("assemble_candidates_from_impls: node_item={:?}", node_item);
 
                 if node_item.is_final() {
                     // Non-specializable items are always projectable.
@@ -1788,14 +1733,18 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
                 return Err(());
             }
         };
+        debug!("assemble_candidates_from_impls: eligible={:?}", eligible);
 
         if eligible {
             if candidate_set.push_candidate(ProjectionCandidate::Select(impl_source)) {
+                debug!("assemble_candidates_from_impls: ret=Ok(())");
                 Ok(())
             } else {
+                debug!("assemble_candidates_from_impls: ret=Err(())");
                 Err(())
             }
         } else {
+            debug!("assemble_candidates_from_impls: ret=Err(())");
             Err(())
         }
     });
@@ -1820,18 +1769,22 @@ fn confirm_candidate<'cx, 'tcx>(
         ProjectionCandidate::Select(impl_source) => {
             confirm_select_candidate(selcx, obligation, impl_source)
         }
-        ProjectionCandidate::ImplTraitInTrait(ImplTraitInTraitCandidate::Impl(data)) => {
-            confirm_impl_trait_in_trait_candidate(selcx, obligation, data)
-        }
+        // FIXME I guess we probably don't want this arm, we just want to also remove
+        // ImplTraitInTrait ProjectionCandidate and assembly a different kind of candidate for impl
+        // traits. Select maybe?
+        //ProjectionCandidate::ImplTraitInTrait(ImplTraitInTraitCandidate::Impl(data)) => {
+        //    confirm_impl_trait_in_trait_candidate(selcx, obligation, data)
+        //}
         // If we're projecting an RPITIT for a default trait body, that's just
         // the same def-id, but as an opaque type (with regular RPIT semantics).
-        ProjectionCandidate::ImplTraitInTrait(ImplTraitInTraitCandidate::Trait) => Progress {
-            term: selcx
-                .tcx()
-                .mk_opaque(obligation.predicate.item_def_id, obligation.predicate.substs)
-                .into(),
-            obligations: vec![],
-        },
+        // FIXME: unsure about this case
+        //ProjectionCandidate::ImplTraitInTrait(ImplTraitInTraitCandidate::Trait) => Progress {
+        //    term: selcx
+        //        .tcx()
+        //        .mk_opaque(obligation.predicate.item_def_id, obligation.predicate.substs)
+        //        .into(),
+        //    obligations: vec![],
+        //},
     };
 
     // When checking for cycle during evaluation, we compare predicates with
@@ -2139,12 +2092,15 @@ fn confirm_impl_candidate<'cx, 'tcx>(
 
     let ImplSourceUserDefinedData { impl_def_id, substs, mut nested } = impl_impl_source;
     let assoc_item_id = obligation.predicate.item_def_id;
+    debug!("confirm_impl_candidate: assoc_item_id={:#?}", assoc_item_id);
     let trait_def_id = tcx.trait_id_of_impl(impl_def_id).unwrap();
+    debug!("confirm_impl_candidate: trait_def_id={:#?}", trait_def_id);
 
     let param_env = obligation.param_env;
     let Ok(assoc_ty) = assoc_def(selcx, impl_def_id, assoc_item_id) else {
         return Progress { term: tcx.ty_error().into(), obligations: nested };
     };
+    debug!("confirm_impl_candidate: trait_def_id={:#?}", trait_def_id);
 
     if !assoc_ty.item.defaultness(tcx).has_value() {
         // This means that the impl is missing a definition for the
@@ -2163,11 +2119,17 @@ fn confirm_impl_candidate<'cx, 'tcx>(
     // * `obligation.predicate.substs` is `[Vec<u32>, S]`
     // * `substs` is `[u32]`
     // * `substs` ends up as `[u32, S]`
+    debug!("confirm_impl_candidate: target_substs={:#?}", substs);
     let substs = obligation.predicate.substs.rebase_onto(tcx, trait_def_id, substs);
+    debug!("confirm_impl_candidate: substs={:#?}", substs);
+    debug!("confirm_impl_candidate: param_env={:#?}", param_env);
     let substs =
         translate_substs(selcx.infcx(), param_env, impl_def_id, substs, assoc_ty.defining_node);
+    debug!("confirm_impl_candidate: translated_substs={:#?}", substs);
     let ty = tcx.bound_type_of(assoc_ty.item.def_id);
+    debug!("confirm_impl_candidate: ty={:#?}", ty);
     let is_const = matches!(tcx.def_kind(assoc_ty.item.def_id), DefKind::AssocConst);
+    debug!("confirm_impl_candidate: is_const={:#?}", is_const);
     let term: ty::EarlyBinder<ty::Term<'tcx>> = if is_const {
         let identity_substs =
             crate::traits::InternalSubsts::identity_for_item(tcx, assoc_ty.item.def_id);
@@ -2177,6 +2139,11 @@ fn confirm_impl_candidate<'cx, 'tcx>(
     } else {
         ty.map_bound(|ty| ty.into())
     };
+    debug!("confirm_impl_candidate: term={:#?}", term);
+    debug!(
+        "confirm_impl_candidate: check_substs_compatible={:#?}",
+        check_substs_compatible(tcx, &assoc_ty.item, substs)
+    );
     if !check_substs_compatible(tcx, &assoc_ty.item, substs) {
         let err = tcx.ty_error_with_message(
             obligation.cause.span,
@@ -2227,104 +2194,9 @@ fn check_substs_compatible<'tcx>(
     let generics = tcx.generics_of(assoc_item.def_id);
     // Chop off any additional substs (RPITIT) substs
     let substs = &substs[0..generics.count().min(substs.len())];
+    debug!("check_substs_compatible_inner: generics={:#?}", generics);
+    debug!("check_substs_compatible_inner: substs={:#?}", substs);
     check_substs_compatible_inner(tcx, generics, substs)
-}
-
-fn confirm_impl_trait_in_trait_candidate<'tcx>(
-    selcx: &mut SelectionContext<'_, 'tcx>,
-    obligation: &ProjectionTyObligation<'tcx>,
-    data: ImplSourceUserDefinedData<'tcx, PredicateObligation<'tcx>>,
-) -> Progress<'tcx> {
-    let tcx = selcx.tcx();
-    let mut obligations = data.nested;
-
-    let (trait_fn_def_id, _) =
-        tcx.def_path(obligation.predicate.item_def_id).get_impl_trait_in_trait_data().unwrap();
-    let Ok(leaf_def) = assoc_def(selcx, data.impl_def_id, trait_fn_def_id) else {
-        return Progress { term: tcx.ty_error().into(), obligations };
-    };
-    if !leaf_def.item.defaultness(tcx).has_value() {
-        return Progress { term: tcx.ty_error().into(), obligations };
-    }
-
-    // Use the default `impl Trait` for the trait, e.g., for a default trait body
-    if leaf_def.item.container == ty::AssocItemContainer::TraitContainer {
-        return Progress {
-            term: tcx
-                .mk_opaque(obligation.predicate.item_def_id, obligation.predicate.substs)
-                .into(),
-            obligations,
-        };
-    }
-
-    // Rebase from {trait}::{fn}::{opaque} to {impl}::{fn}::{opaque},
-    // since `data.substs` are the impl substs.
-    let impl_fn_substs =
-        obligation.predicate.substs.rebase_onto(tcx, tcx.parent(trait_fn_def_id), data.substs);
-    let impl_fn_substs = translate_substs(
-        selcx.infcx(),
-        obligation.param_env,
-        data.impl_def_id,
-        impl_fn_substs,
-        leaf_def.defining_node,
-    );
-
-    if !check_substs_compatible(tcx, &leaf_def.item, impl_fn_substs) {
-        let err = tcx.ty_error_with_message(
-            obligation.cause.span,
-            "impl method and trait method have different parameters",
-        );
-        return Progress { term: err.into(), obligations };
-    }
-
-    let impl_fn_def_id = leaf_def.item.def_id;
-
-    let cause = ObligationCause::new(
-        obligation.cause.span,
-        obligation.cause.body_id,
-        super::ItemObligation(impl_fn_def_id),
-    );
-    let predicates = normalize_with_depth_to(
-        selcx,
-        obligation.param_env,
-        cause.clone(),
-        obligation.recursion_depth + 1,
-        tcx.predicates_of(impl_fn_def_id).instantiate(tcx, impl_fn_substs),
-        &mut obligations,
-    );
-    obligations.extend(std::iter::zip(predicates.predicates, predicates.spans).map(
-        |(pred, span)| {
-            Obligation::with_depth(
-                tcx,
-                ObligationCause::new(
-                    obligation.cause.span,
-                    obligation.cause.body_id,
-                    if span.is_dummy() {
-                        super::ItemObligation(impl_fn_def_id)
-                    } else {
-                        super::BindingObligation(impl_fn_def_id, span)
-                    },
-                ),
-                obligation.recursion_depth + 1,
-                obligation.param_env,
-                pred,
-            )
-        },
-    ));
-
-    let ty = super::normalize_to(
-        selcx,
-        obligation.param_env,
-        cause.clone(),
-        tcx.bound_trait_impl_trait_tys(impl_fn_def_id)
-            .map_bound(|tys| {
-                tys.map_or_else(|_| tcx.ty_error(), |tys| tys[&obligation.predicate.item_def_id])
-            })
-            .subst(tcx, impl_fn_substs),
-        &mut obligations,
-    );
-
-    Progress { term: ty.into(), obligations }
 }
 
 // Get obligations corresponding to the predicates from the where-clause of the

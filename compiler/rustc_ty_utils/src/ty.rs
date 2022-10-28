@@ -68,12 +68,20 @@ fn sized_constraint_for_ty<'tcx>(
 }
 
 fn impl_defaultness(tcx: TyCtxt<'_>, def_id: DefId) -> hir::Defaultness {
-    match tcx.hir().get_by_def_id(def_id.expect_local()) {
-        hir::Node::Item(hir::Item { kind: hir::ItemKind::Impl(impl_), .. }) => impl_.defaultness,
-        hir::Node::ImplItem(hir::ImplItem { defaultness, .. })
-        | hir::Node::TraitItem(hir::TraitItem { defaultness, .. }) => *defaultness,
-        node => {
-            bug!("`impl_defaultness` called on {:?}", node);
+    if let Some((fn_def_id, _)) = tcx.def_path(def_id).get_impl_trait_in_trait_data() {
+        let assoc_item = tcx.associated_item(fn_def_id);
+        debug!("should_encode_type: assoc_item={:?}", assoc_item);
+        assoc_item.defaultness(tcx)
+    } else {
+        match tcx.hir().get_by_def_id(def_id.expect_local()) {
+            hir::Node::Item(hir::Item { kind: hir::ItemKind::Impl(impl_), .. }) => {
+                impl_.defaultness
+            }
+            hir::Node::ImplItem(hir::ImplItem { defaultness, .. })
+            | hir::Node::TraitItem(hir::TraitItem { defaultness, .. }) => *defaultness,
+            node => {
+                bug!("`impl_defaultness` called on {:?}", node);
+            }
         }
     }
 }
