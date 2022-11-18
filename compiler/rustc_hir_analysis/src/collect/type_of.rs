@@ -254,7 +254,8 @@ pub(super) fn type_of(tcx: TyCtxt<'_>, def_id: DefId) -> Ty<'_> {
                     return map[&trait_rpit_def_id];
                 }
                 Err(_) => {
-                    return tcx.ty_error();
+                    bug!("NOES");
+                    //return tcx.ty_error();
                 }
             }
         }
