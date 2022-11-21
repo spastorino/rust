@@ -60,7 +60,7 @@ use rustc_hir::def_id::{LocalDefId, CRATE_DEF_ID};
 use rustc_hir::definitions::DefPathData;
 use rustc_hir::{ConstArg, GenericArg, ItemLocalId, ParamName, TraitCandidate};
 use rustc_index::vec::{Idx, IndexVec};
-use rustc_middle::ty::{ResolverAstLowering, TyCtxt};
+use rustc_middle::ty::{DefIdTree, ResolverAstLowering, TyCtxt};
 use rustc_middle::{bug, span_bug};
 use rustc_session::parse::feature_err;
 use rustc_span::hygiene::MacroKind;
@@ -1473,8 +1473,11 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             ),
             hir::OpaqueTyOrigin::FnReturn(fn_def_id) => {
                 if in_trait {
+                    let trait_def_id = self.tcx.opt_parent(fn_def_id.to_def_id()).unwrap();
+                    let trait_def_id = trait_def_id.as_local().unwrap();
+
                     self.create_def(
-                        fn_def_id,
+                        trait_def_id,
                         opaque_ty_node_id,
                         DefPathData::ImplTraitInTrait(fn_def_id.to_def_id(), None),
                     )
