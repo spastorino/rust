@@ -1476,6 +1476,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     let trait_def_id = self.tcx.opt_parent(fn_def_id.to_def_id()).unwrap();
                     let trait_def_id = trait_def_id.as_local().unwrap();
 
+                    debug!("trait_def_id = {:?}", trait_def_id);
+                    debug!("opaque_ty_node_id = {:?}", opaque_ty_node_id);
+                    debug!("fn_def_id = {:?}", fn_def_id.to_def_id());
                     self.create_def(
                         trait_def_id,
                         opaque_ty_node_id,
