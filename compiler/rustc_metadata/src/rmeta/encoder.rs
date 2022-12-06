@@ -1127,8 +1127,7 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
         let mut is_public: Option<bool> = None;
 
         let mut attrs = tcx
-            .hir()
-            .attrs(tcx.hir().local_def_id_to_hir_id(def_id))
+            .item_attrs(def_id)
             .iter()
             .filter(move |attr| should_encode_attr(tcx, attr, def_id, &mut is_public));
 
