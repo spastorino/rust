@@ -545,6 +545,8 @@ fn check_item_type(tcx: TyCtxt<'_>, id: hir::ItemId) {
             }
         }
         DefKind::Trait => {
+            // FIXME remove this when we properly make use of associated types on the impl side
+            tcx.ensure().associated_items(id.owner_id.def_id);
             let it = tcx.hir().item(id);
             let hir::ItemKind::Trait(_, _, _, _, items) = it.kind else {
                 return;
