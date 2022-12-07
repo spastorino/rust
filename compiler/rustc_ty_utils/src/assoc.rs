@@ -4,7 +4,8 @@ use rustc_hir::def::DefKind;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::definitions::DefPathData;
 use rustc_hir::intravisit::{self, Visitor};
-use rustc_middle::ty::{self, DefIdTree, TyCtxt};
+use rustc_middle::ty::{self, DefIdTree, InternalSubsts, TyCtxt, Visibility};
+use rustc_span::symbol::kw;
 
 pub fn provide(providers: &mut ty::query::Providers) {
     *providers = ty::query::Providers {
@@ -22,7 +23,21 @@ fn associated_item_def_ids(tcx: TyCtxt<'_>, def_id: DefId) -> &[DefId] {
     let item = tcx.hir().expect_item(def_id.expect_local());
     match item.kind {
         hir::ItemKind::Trait(.., ref trait_item_refs) => tcx.arena.alloc_from_iter(
-            trait_item_refs.iter().map(|trait_item_ref| trait_item_ref.id.owner_id.to_def_id()),
+            trait_item_refs
+                .iter()
+                .map(|trait_item_ref| trait_item_ref.id.owner_id.to_def_id())
+                .chain(
+                    trait_item_refs
+                        .iter()
+                        .filter(|trait_item_ref| {
+                            matches!(trait_item_ref.kind, hir::AssocItemKind::Fn { .. })
+                        })
+                        .flat_map(|trait_item_ref| {
+                            let trait_fn_def_id = trait_item_ref.id.owner_id.def_id.to_def_id();
+                            tcx.associated_items_for_impl_trait_in_trait(trait_fn_def_id)
+                        })
+                        .map(|def_id| *def_id),
+                ),
         ),
         hir::ItemKind::Impl(ref impl_) => tcx.arena.alloc_from_iter(
             impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()),
@@ -191,9 +206,52 @@ fn associated_item_for_impl_trait_in_trait(
     assert_eq!(tcx.def_kind(trait_def_id), DefKind::Trait);
 
     let span = tcx.def_span(opaque_ty_def_id);
+
     let trait_assoc_ty =
         tcx.at(span).create_def(trait_def_id.expect_local(), DefPathData::ImplTraitAssocTy);
-    trait_assoc_ty.def_id()
+    let local_def_id = trait_assoc_ty.def_id();
+    let def_id = local_def_id.to_def_id();
+
+    trait_assoc_ty.opt_def_kind(Some(DefKind::AssocTy));
+
+    trait_assoc_ty.associated_item(ty::AssocItem {
+        name: kw::Empty,
+        kind: ty::AssocKind::Type,
+        def_id,
+        trait_item_def_id: None,
+        container: ty::TraitContainer,
+        fn_has_self_parameter: false,
+    });
+
+    trait_assoc_ty.opt_local_def_id_to_hir_id(None);
+
+    trait_assoc_ty.def_ident_span(Some(span));
+
+    // FIXME: fn visibility
+    trait_assoc_ty.visibility(Visibility::Public);
+
+    trait_assoc_ty.generics_of(tcx.generics_of(opaque_ty_def_id).clone());
+
+    // FIXME
+    trait_assoc_ty.explicit_predicates_of(ty::GenericPredicates {
+        parent: Some(trait_def_id),
+        predicates: &[],
+    });
+
+    trait_assoc_ty.inferred_outlives_of(&[]);
+
+    // FIXME opaque_ty_def_id impl_defaultness
+    trait_assoc_ty.impl_defaultness(tcx.impl_defaultness(fn_def_id));
+
+    // FIXME inject this conditionally if the trait method has a default body
+    trait_assoc_ty.type_of(ty::EarlyBinder(
+        tcx.mk_opaque(def_id, InternalSubsts::identity_for_item(tcx, def_id)),
+    ));
+
+    // FIXME
+    trait_assoc_ty.explicit_item_bounds(&[]);
+
+    local_def_id
 }
 
 /// Given an `trait_assoc_def_id` that corresponds to a previously synthethized impl trait in trait
