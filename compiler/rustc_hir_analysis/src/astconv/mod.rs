@@ -22,6 +22,7 @@ use rustc_errors::{
 use rustc_hir as hir;
 use rustc_hir::def::{CtorOf, DefKind, Namespace, Res};
 use rustc_hir::def_id::{DefId, LocalDefId};
+use rustc_hir::definitions::DefPathData;
 use rustc_hir::intravisit::{walk_generics, Visitor as _};
 use rustc_hir::{GenericArg, GenericArgs, OpaqueTyOrigin};
 use rustc_middle::middle::stability::AllowUnstable;
@@ -1381,6 +1382,14 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                             tcx.associated_items(pred.def_id())
                                 .in_definition_order()
                                 .filter(|item| item.kind == ty::AssocKind::Type)
+                                .filter(|item| {
+                                    tcx.def_path(item.def_id).data.last().map_or(
+                                        true,
+                                        |def_path_data| {
+                                            def_path_data.data != DefPathData::ImplTraitAssocTy
+                                        },
+                                    )
+                                })
                                 .map(|item| item.def_id),
                         );
                     }

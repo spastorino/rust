@@ -1174,8 +1174,7 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
                 record!(self.tables.codegen_fn_attrs[def_id] <- self.tcx.codegen_fn_attrs(def_id));
             }
             if should_encode_visibility(def_kind) {
-                let vis =
-                    self.tcx.local_visibility(local_id).map_id(|def_id| def_id.local_def_index);
+                let vis = self.tcx.visibility(def_id).map_id(|def_id| def_id.index);
                 record!(self.tables.visibility[def_id] <- vis);
             }
             if should_encode_stability(def_kind) {

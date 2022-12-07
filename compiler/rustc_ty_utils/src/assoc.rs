@@ -17,7 +17,21 @@ fn associated_item_def_ids(tcx: TyCtxt<'_>, def_id: DefId) -> &[DefId] {
     let item = tcx.hir().expect_item(def_id.expect_local());
     match item.kind {
         hir::ItemKind::Trait(.., ref trait_item_refs) => tcx.arena.alloc_from_iter(
-            trait_item_refs.iter().map(|trait_item_ref| trait_item_ref.id.owner_id.to_def_id()),
+            trait_item_refs
+                .iter()
+                .map(|trait_item_ref| trait_item_ref.id.owner_id.to_def_id())
+                .chain(
+                    trait_item_refs
+                        .iter()
+                        .filter(|trait_item_ref| {
+                            matches!(trait_item_ref.kind, hir::AssocItemKind::Fn { .. })
+                        })
+                        .flat_map(|trait_item_ref| {
+                            let trait_fn_def_id = trait_item_ref.id.owner_id.def_id.to_def_id();
+                            tcx.assoc_items_for_rpits(trait_fn_def_id)
+                        })
+                        .map(|def_id| *def_id),
+                ),
         ),
         hir::ItemKind::Impl(ref impl_) => tcx.arena.alloc_from_iter(
             impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()),

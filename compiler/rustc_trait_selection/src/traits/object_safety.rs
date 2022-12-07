@@ -17,6 +17,7 @@ use hir::def::DefKind;
 use rustc_errors::{DelayDm, FatalError, MultiSpan};
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
+use rustc_hir::definitions::DefPathData;
 use rustc_middle::ty::subst::{GenericArg, InternalSubsts};
 use rustc_middle::ty::{
     self, EarlyBinder, Ty, TyCtxt, TypeSuperVisitable, TypeVisitable, TypeVisitor,
@@ -139,6 +140,11 @@ fn object_safety_violations_for_trait(
                 .in_definition_order()
                 .filter(|item| item.kind == ty::AssocKind::Type)
                 .filter(|item| !tcx.generics_of(item.def_id).params.is_empty())
+                .filter(|item| {
+                    tcx.def_path(item.def_id).data.last().map_or(true, |def_path_data| {
+                        def_path_data.data != DefPathData::ImplTraitAssocTy
+                    })
+                })
                 .map(|item| {
                     let ident = item.ident(tcx);
                     ObjectSafetyViolation::GAT(ident.name, ident.span)
