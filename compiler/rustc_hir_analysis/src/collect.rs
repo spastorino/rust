@@ -25,13 +25,16 @@ use rustc_hir as hir;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::definitions::DefPathData;
 use rustc_hir::intravisit::{self, Visitor};
-use rustc_hir::{GenericParamKind, Node};
+use rustc_hir::{Defaultness, GenericParamKind, Node};
 use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
 use rustc_infer::traits::ObligationCause;
 use rustc_middle::hir::nested_filter;
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::util::{Discr, IntTypeExt};
-use rustc_middle::ty::{self, AdtKind, Const, DefIdTree, IsSuggestable, ToPredicate, Ty, TyCtxt};
+use rustc_middle::ty::{
+    self, AdtKind, Const, DefIdTree, InternalSubsts, IsSuggestable, ToPredicate, Ty, TyCtxt,
+    Visibility,
+};
 use rustc_span::symbol::{kw, sym, Ident, Symbol};
 use rustc_span::Span;
 use rustc_target::spec::abi;
@@ -1374,8 +1377,51 @@ fn rpitit_associated_item(tcx: TyCtxt<'_>, opaque_ty_def_id: LocalDefId) -> Opti
     let fn_def_id = tcx.impl_trait_in_trait_parent(opaque_ty_def_id.to_def_id());
     if let Some(trait_def_id) = tcx.opt_parent(fn_def_id) && tcx.def_kind(trait_def_id) == DefKind::Trait {
         let span = tcx.def_span(opaque_ty_def_id);
-        let trait_assoc_ty = tcx.at(span).create_def(trait_def_id.expect_local(), DefPathData::ImplTraitAssocTy);
-        Some(trait_assoc_ty.def_id())
+
+        let trait_assoc_ty =
+            tcx.at(span).create_def(trait_def_id.expect_local(), DefPathData::ImplTraitAssocTy);
+        let local_def_id = trait_assoc_ty.def_id();
+        let def_id = local_def_id.to_def_id();
+
+        trait_assoc_ty.opt_def_kind(Some(DefKind::AssocTy));
+
+        trait_assoc_ty.associated_item(ty::AssocItem {
+            name: kw::Empty,
+            kind: ty::AssocKind::Type,
+            def_id,
+            trait_item_def_id: None,
+            container: ty::TraitContainer,
+            fn_has_self_parameter: false,
+        });
+
+        trait_assoc_ty.opt_local_def_id_to_hir_id(None);
+
+        trait_assoc_ty.def_ident_span(Some(span));
+
+        // FIXME: fn visibility
+        trait_assoc_ty.visibility(Visibility::Public);
+
+        trait_assoc_ty.generics_of(tcx.generics_of(opaque_ty_def_id).clone());
+
+        // FIXME
+        trait_assoc_ty.explicit_predicates_of(ty::GenericPredicates {
+            parent: Some(trait_def_id),
+            predicates: &[],
+        });
+
+        trait_assoc_ty.inferred_outlives_of(&[]);
+
+        // FIXME opaque_ty_def_id impl_defaultness
+        trait_assoc_ty.impl_defaultness(Defaultness::Final);
+
+        // FIXME inject this conditionally if the trait method has a default body
+        trait_assoc_ty
+            .type_of(tcx.mk_opaque(def_id, InternalSubsts::identity_for_item(tcx, def_id)));
+
+        // FIXME
+        trait_assoc_ty.explicit_item_bounds(&[]);
+
+        Some(local_def_id)
     } else {
         None
     }
