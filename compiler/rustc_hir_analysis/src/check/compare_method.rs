@@ -447,7 +447,9 @@ pub fn collect_trait_impl_trait_tys<'tcx>(
     def_id: DefId,
 ) -> Result<&'tcx FxHashMap<DefId, Ty<'tcx>>, ErrorGuaranteed> {
     let impl_m = tcx.opt_associated_item(def_id).unwrap();
+    debug!(?impl_m);
     let trait_m = tcx.opt_associated_item(impl_m.trait_item_def_id.unwrap()).unwrap();
+    debug!(?trait_m);
     let impl_trait_ref = tcx.impl_trait_ref(impl_m.impl_container(tcx).unwrap()).unwrap();
     let param_env = tcx.param_env(def_id);
 
@@ -592,6 +594,7 @@ pub fn collect_trait_impl_trait_tys<'tcx>(
     );
 
     let mut collected_tys = FxHashMap::default();
+    debug!(?collector.types);
     for (def_id, (ty, substs)) in collector.types {
         match infcx.fully_resolve(ty) {
             Ok(ty) => {

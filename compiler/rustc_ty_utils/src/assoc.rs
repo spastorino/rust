@@ -1,7 +1,9 @@
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
+use rustc_hir::definitions::DefPathData;
 use rustc_middle::ty::{self, TyCtxt};
+use rustc_span::symbol::kw;
 
 pub fn provide(providers: &mut ty::query::Providers) {
     *providers = ty::query::Providers {
@@ -14,7 +16,8 @@ pub fn provide(providers: &mut ty::query::Providers) {
 }
 
 fn associated_item_def_ids(tcx: TyCtxt<'_>, def_id: DefId) -> &[DefId] {
-    let item = tcx.hir().expect_item(def_id.expect_local());
+    let local_def_id = def_id.expect_local();
+    let item = tcx.hir().expect_item(local_def_id);
     match item.kind {
         hir::ItemKind::Trait(.., ref trait_item_refs) => tcx.arena.alloc_from_iter(
             trait_item_refs
@@ -34,7 +37,57 @@ fn associated_item_def_ids(tcx: TyCtxt<'_>, def_id: DefId) -> &[DefId] {
                 ),
         ),
         hir::ItemKind::Impl(ref impl_) => tcx.arena.alloc_from_iter(
-            impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()),
+            impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()).chain(
+                // FIXME what happens with default methods on traits?
+                impl_.of_trait.iter().flat_map(|_| {
+                    impl_
+                        .items
+                        .iter()
+                        .filter(|impl_item_ref| {
+                            matches!(impl_item_ref.kind, hir::AssocItemKind::Fn { .. })
+                        })
+                        .flat_map(|impl_item_ref| {
+                            let trait_fn_def_id = impl_item_ref.trait_item_def_id.unwrap();
+                            debug!("type_of: trait_fn_def_id={:?}", trait_fn_def_id);
+                            tcx.assoc_items_for_rpits(trait_fn_def_id).iter().map(
+                                |assoc_item_def_id| {
+                                    debug!("type_of: assoc_item_def_id={:?}", assoc_item_def_id);
+                                    // FIXME fix the span
+                                    let span = tcx.def_span(assoc_item_def_id);
+                                    let impl_trait_assoc_ty = tcx
+                                        .at(span)
+                                        .create_def(local_def_id, DefPathData::ImplTraitAssocTy);
+
+                                    impl_trait_assoc_ty.associated_item(ty::AssocItem {
+                                        name: kw::Empty,
+                                        kind: ty::AssocKind::Type,
+                                        def_id,
+                                        trait_item_def_id: Some(*assoc_item_def_id),
+                                        container: ty::ImplContainer,
+                                        fn_has_self_parameter: false,
+                                    });
+
+                                    impl_trait_assoc_ty
+                                        .type_of({
+                                            match tcx.collect_trait_impl_trait_tys(impl_item_ref.id.owner_id.def_id) {
+                                                Ok(map) => {
+                                                    debug!("type_of: impl_item_ref.id.owner_id.def_id={:?}", impl_item_ref.id.owner_id.def_id);
+                                                    debug!("type_of: impl_trait_assoc_ty.def_id().to_def_id()={:?}", impl_trait_assoc_ty.def_id().to_def_id());
+                                                    debug!("type_of: collect_trait_impl_trait_tys map={:?}", map);
+                                                    map[&assoc_item_def_id]
+                                                }
+                                                Err(_) => {
+                                                    tcx.ty_error()
+                                                }
+                                            }
+                                        });
+
+                                    impl_trait_assoc_ty.def_id().to_def_id()
+                                },
+                            )
+                        })
+                }),
+            ),
         ),
         hir::ItemKind::TraitAlias(..) => &[],
         _ => span_bug!(item.span, "associated_item_def_ids: not impl or trait"),
