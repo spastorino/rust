@@ -741,6 +741,14 @@ rustc_queries! {
         separate_provide_extern
     }
 
+    /// Given an opaque rpitit `opaque_ty_def_id`, creates and returns the corresponding associated item.
+    /// Returns `None` if it's an RPIT but not in trait.
+    query rpitit_associated_item(opaque_ty_def_id: LocalDefId) -> Option<LocalDefId> {
+        desc { |tcx| "creates the associated item corresponding to the opaque rpitit `{}`", tcx.def_path_str(opaque_ty_def_id.to_def_id()) }
+        cache_on_disk_if { true }
+        separate_provide_extern
+    }
+
     /// Given an `impl_id`, return the trait it implements.
     /// Return `None` if this is an inherent impl.
     query impl_trait_ref(impl_id: DefId) -> Option<ty::TraitRef<'tcx>> {
