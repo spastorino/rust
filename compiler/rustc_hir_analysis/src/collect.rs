@@ -73,6 +73,7 @@ pub fn provide(providers: &mut Providers) {
         adt_def,
         fn_sig,
         assoc_items_for_rpitits,
+        rpitit_associated_item,
         impl_trait_ref,
         impl_polarity,
         is_foreign_item,
@@ -1359,15 +1360,22 @@ fn assoc_items_for_rpitits(tcx: TyCtxt<'_>, trait_fn_def_id: DefId) -> &'_ [DefI
     if let Some(output) = tcx.hir().get_fn_output(trait_fn_def_id.expect_local()) {
         visitor.visit_fn_ret_ty(output);
 
-        let trait_def_id = tcx.parent(trait_fn_def_id).expect_local();
-
-        tcx.arena.alloc_from_iter(visitor.rpits.iter().map(|_opaque_ty_def_id| {
-            let trait_assoc_ty =
-                tcx.at(output.span()).create_def(trait_def_id, DefPathData::ImplTraitAssocTy);
-            trait_assoc_ty.def_id().to_def_id()
+        tcx.arena.alloc_from_iter(visitor.rpits.iter().map(|opaque_ty_def_id| {
+            tcx.rpitit_associated_item(opaque_ty_def_id.expect_local()).unwrap().to_def_id()
         }))
     } else {
         &[]
+    }
+}
+
+fn rpitit_associated_item(tcx: TyCtxt<'_>, opaque_ty_def_id: LocalDefId) -> Option<LocalDefId> {
+    let fn_def_id = tcx.impl_trait_in_trait_parent(opaque_ty_def_id.to_def_id());
+    if let Some(trait_def_id) = tcx.opt_parent(fn_def_id) && tcx.def_kind(trait_def_id) == DefKind::Trait {
+        let span = tcx.def_span(opaque_ty_def_id);
+        let trait_assoc_ty = tcx.at(span).create_def(trait_def_id.expect_local(), DefPathData::ImplTraitAssocTy);
+        Some(trait_assoc_ty.def_id())
+    } else {
+        None
     }
 }
 
