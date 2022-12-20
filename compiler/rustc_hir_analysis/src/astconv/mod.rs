@@ -2700,18 +2700,23 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 self.res_to_ty(opt_self_ty, path, false)
             }
             hir::TyKind::OpaqueDef(item_id, lifetimes, in_trait) => {
-                let def_id = item_id.owner_id.to_def_id();
+                let local_def_id = item_id.owner_id.def_id;
                 if in_trait {
-                    let assoc_item_def_id = tcx.rpitit_associated_item(def_id).unwrap();
+                    let assoc_item_def_id =
+                        tcx.rpitit_associated_item(local_def_id).unwrap().to_def_id();
                     let substs = ty::InternalSubsts::identity_for_item(tcx, assoc_item_def_id);
                     tcx.mk_projection(assoc_item_def_id, substs)
                 } else {
                     let opaque_ty = tcx.hir().item(item_id);
 
                     match opaque_ty.kind {
-                        hir::ItemKind::OpaqueTy(hir::OpaqueTy { origin, .. }) => {
-                            self.impl_trait_ty_to_ty(def_id, lifetimes, origin, in_trait)
-                        }
+                        hir::ItemKind::OpaqueTy(hir::OpaqueTy { origin, .. }) => self
+                            .impl_trait_ty_to_ty(
+                                local_def_id.to_def_id(),
+                                lifetimes,
+                                origin,
+                                in_trait,
+                            ),
                         ref i => bug!("`impl Trait` pointed to non-opaque type?? {:#?}", i),
                     }
                 }
