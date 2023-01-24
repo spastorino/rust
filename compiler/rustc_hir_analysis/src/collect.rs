@@ -1461,7 +1461,38 @@ fn impl_assoc_items_for_rpitits(tcx: TyCtxt<'_>, impl_fn_def_id: DefId) -> &'_ [
             // impl_assoc_ty.impl_defaultness(tcx.impl_defaultness());
             impl_assoc_ty.impl_defaultness(Defaultness::Final);
 
-            impl_assoc_ty.generics_of(tcx.generics_of(trait_assoc_def_id).clone());
+            impl_assoc_ty.generics_of({
+                let trait_assoc_generics = tcx.generics_of(trait_assoc_def_id);
+                let trait_assoc_parent_count = trait_assoc_generics.parent_count;
+                let mut params = trait_assoc_generics.params.clone();
+
+                let parent_generics = tcx.generics_of(impl_def_id);
+                let parent_count = parent_generics.parent_count + parent_generics.params.len();
+
+                let mut impl_fn_params = tcx.generics_of(impl_fn_def_id).params.clone();
+
+                for param in &mut params {
+                    param.index = param.index + parent_count as u32 + impl_fn_params.len() as u32
+                        - trait_assoc_parent_count as u32;
+                }
+
+                impl_fn_params.extend(params);
+                params = impl_fn_params;
+
+                let param_def_id_to_index =
+                    params.iter().map(|param| (param.def_id, param.index)).collect();
+
+                let res = ty::Generics {
+                    parent: Some(impl_def_id),
+                    parent_count,
+                    params,
+                    param_def_id_to_index,
+                    has_self: false,
+                    has_late_bound_regions: trait_assoc_generics.has_late_bound_regions,
+                };
+                debug!("generics_of({:?}) = {:?}", trait_assoc_def_id, res);
+                res
+            });
 
             def_id
         },
