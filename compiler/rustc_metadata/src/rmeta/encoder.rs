@@ -1143,6 +1143,16 @@ fn should_encode_fn_rpitits<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> bool {
     }
 }
 
+fn should_encode_impl_fn_rpitits<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> bool {
+    match tcx.def_kind(def_id) {
+        DefKind::Fn | DefKind::AssocFn => {
+            tcx.def_kind(tcx.parent(def_id)) == DefKind::Impl
+                && tcx.hir().get_fn_output(def_id.expect_local()).is_some()
+        }
+        _ => false,
+    }
+}
+
 impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
     fn encode_attrs(&mut self, def_id: LocalDefId) {
         let tcx = self.tcx;
@@ -1228,6 +1238,10 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
             if should_encode_fn_rpitits(tcx, def_id) {
                 let table = tcx.assoc_items_for_rpitits(def_id);
                 record!(self.tables.assoc_items_for_rpitits[def_id] <- table);
+            }
+            if should_encode_impl_fn_rpitits(tcx, def_id) {
+                let table = tcx.impl_assoc_items_for_rpitits(def_id);
+                record!(self.tables.impl_assoc_items_for_rpitits[def_id] <- table);
             }
         }
 

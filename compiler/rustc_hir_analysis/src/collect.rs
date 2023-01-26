@@ -76,6 +76,7 @@ pub fn provide(providers: &mut Providers) {
         adt_def,
         fn_sig,
         assoc_items_for_rpitits,
+        impl_assoc_items_for_rpitits,
         rpitit_associated_item,
         impl_trait_ref,
         impl_polarity,
@@ -1425,6 +1426,48 @@ fn rpitit_associated_item(tcx: TyCtxt<'_>, opaque_ty_def_id: LocalDefId) -> Opti
     } else {
         None
     }
+}
+
+fn impl_assoc_items_for_rpitits(tcx: TyCtxt<'_>, impl_fn_def_id: DefId) -> &'_ [DefId] {
+    let Some(trait_fn_def_id) = tcx.associated_item(impl_fn_def_id).trait_item_def_id else { return &[] };
+    let impl_def_id = tcx.parent(impl_fn_def_id);
+
+    tcx.arena.alloc_from_iter(tcx.assoc_items_for_rpitits(trait_fn_def_id).iter().map(
+        move |trait_assoc_def_id| {
+            // FIXME what happens with trait's default methods?
+
+            // FIXME fix the span
+            let span = tcx.def_span(trait_assoc_def_id);
+            let impl_assoc_ty =
+                tcx.at(span).create_def(impl_def_id.expect_local(), DefPathData::ImplTraitAssocTy);
+
+            let local_def_id = impl_assoc_ty.def_id();
+            let def_id = local_def_id.to_def_id();
+
+            impl_assoc_ty.associated_item(ty::AssocItem {
+                name: kw::Empty,
+                kind: ty::AssocKind::Type,
+                def_id,
+                trait_item_def_id: Some(*trait_assoc_def_id),
+                container: ty::ImplContainer,
+                fn_has_self_parameter: false,
+            });
+
+            impl_assoc_ty.opt_def_kind(Some(DefKind::AssocTy));
+
+            impl_assoc_ty.opt_local_def_id_to_hir_id(None);
+
+            impl_assoc_ty.opt_rpitit_info(Some(impl_fn_def_id));
+
+            // FIXME we probably want the following:
+            // impl_assoc_ty.impl_defaultness(tcx.impl_defaultness());
+            impl_assoc_ty.impl_defaultness(Defaultness::Final);
+
+            impl_assoc_ty.generics_of(tcx.generics_of(trait_assoc_def_id).clone());
+
+            def_id
+        },
+    ))
 }
 
 fn impl_trait_ref(tcx: TyCtxt<'_>, def_id: DefId) -> Option<ty::EarlyBinder<ty::TraitRef<'_>>> {

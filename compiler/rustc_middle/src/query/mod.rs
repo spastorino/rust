@@ -782,6 +782,13 @@ rustc_queries! {
         separate_provide_extern
     }
 
+    /// Given an impl fn `impl_fn_def_id` create and return all the impl associated items corresponding to the rpits on the corresponding trait fn.
+    query impl_assoc_items_for_rpitits(impl_fn_def_id: DefId) -> &'tcx [DefId] {
+        desc { |tcx| "creating impl associated items for rpits returned by `{}`", tcx.def_path_str(impl_fn_def_id) }
+        cache_on_disk_if { impl_fn_def_id.is_local() }
+        separate_provide_extern
+    }
+
     /// Given an opaque rpitit `opaque_ty_def_id`, creates and returns the corresponding associated item.
     /// Returns `None` if it's an RPIT but not in trait.
     query rpitit_associated_item(opaque_ty_def_id: LocalDefId) -> Option<LocalDefId> {
@@ -1150,6 +1157,13 @@ rustc_queries! {
         desc { |tcx| "looking up definition kind of `{}`", tcx.def_path_str(def_id) }
         cache_on_disk_if { def_id.is_local() }
         separate_provide_extern
+        feedable
+    }
+
+    /// The `opt_rpitit_info` query returns the def id of the function where the RPIT is defined.
+    query opt_rpitit_info(def_id: DefId) -> Option<DefId> {
+        desc { |tcx| "opt_rpitit_info `{}`", tcx.def_path_str(def_id) }
+        cache_on_disk_if { def_id.is_local() }
         feedable
     }
 
