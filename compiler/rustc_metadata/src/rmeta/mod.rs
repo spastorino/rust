@@ -416,6 +416,7 @@ define_tables! {
     doc_link_resolutions: Table<DefIndex, LazyValue<DocLinkResMap>>,
     doc_link_traits_in_scope: Table<DefIndex, LazyArray<DefId>>,
     assoc_items_for_rpitits: Table<DefIndex, LazyValue<&'static [DefId]>>,
+    impl_assoc_items_for_rpitits: Table<DefIndex, LazyValue<&'static [DefId]>>,
 }
 
 #[derive(TyEncodable, TyDecodable)]

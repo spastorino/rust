@@ -34,7 +34,20 @@ fn associated_item_def_ids(tcx: TyCtxt<'_>, def_id: DefId) -> &[DefId] {
                 ),
         ),
         hir::ItemKind::Impl(ref impl_) => tcx.arena.alloc_from_iter(
-            impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()),
+            impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()).chain(
+                impl_.of_trait.iter().flat_map(|_| {
+                    impl_
+                        .items
+                        .iter()
+                        .filter(|impl_item_ref| {
+                            matches!(impl_item_ref.kind, hir::AssocItemKind::Fn { .. })
+                        })
+                        .flat_map(|impl_item_ref| {
+                            tcx.impl_assoc_items_for_rpitits(impl_item_ref.id.owner_id.to_def_id())
+                        })
+                        .map(|def_id| *def_id)
+                }),
+            ),
         ),
         _ => span_bug!(item.span, "associated_item_def_ids: not impl or trait"),
     }
