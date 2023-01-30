@@ -1497,7 +1497,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     }
                 }
             }
-            TyKind::MacCall(_) => panic!("`TyKind::MacCall` should have been expanded by now"),
+            TyKind::MacCall(_) => {
+                span_bug!(t.span, "`TyKind::MacCall` should have been expanded by now")
+            }
             TyKind::CVarArgs => {
                 let guar = self.dcx().span_delayed_bug(
                     t.span,
@@ -1505,6 +1507,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 );
                 hir::TyKind::Err(guar)
             }
+            TyKind::Pat(..) => span_bug!(t.span, "pattern types are unimplemented"),
         };
 
         hir::Ty { kind, span: self.lower_span(t.span), hir_id: self.lower_node_id(t.id) }

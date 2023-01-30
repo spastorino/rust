@@ -609,6 +609,7 @@ impl<'v> ast_visit::Visitor<'v> for StatCollector<'v> {
                 AnonStruct,
                 AnonUnion,
                 Path,
+                Pat,
                 TraitObject,
                 ImplTrait,
                 Paren,

@@ -2140,6 +2140,9 @@ pub enum TyKind {
     Err,
     /// Placeholder for a `va_list`.
     CVarArgs,
+    /// Pattern types like `u32 as 1..=`, which is the same as `NonZeroU32`,
+    /// just as part of the type system.
+    Pat(P<Ty>, P<Pat>),
 }
 
 impl TyKind {
