@@ -584,7 +584,11 @@ fn get_index_type_id(
             }
         }
         // Not supported yet
-        clean::BareFunction(_) | clean::Generic(_) | clean::ImplTrait(_) | clean::Infer => None,
+        clean::Type::Pat(..)
+        | clean::BareFunction(_)
+        | clean::Generic(_)
+        | clean::ImplTrait(_)
+        | clean::Infer => None,
     }
 }
 

@@ -855,6 +855,10 @@ pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty<'v>) {
         TyKind::AnonAdt(item_id) => {
             visitor.visit_nested_item(item_id);
         }
+        TyKind::Pat(ty, pat) => {
+            visitor.visit_ty(ty);
+            visitor.visit_pat(pat)
+        }
     }
 }
 

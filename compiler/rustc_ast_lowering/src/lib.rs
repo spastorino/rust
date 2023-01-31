@@ -1497,6 +1497,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                     }
                 }
             }
+            TyKind::Pat(ty, pat) => hir::TyKind::Pat(self.lower_ty(ty, itctx), self.lower_pat(pat)),
             TyKind::MacCall(_) => {
                 span_bug!(t.span, "`TyKind::MacCall` should have been expanded by now")
             }
@@ -1507,7 +1508,6 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
                 );
                 hir::TyKind::Err(guar)
             }
-            TyKind::Pat(..) => span_bug!(t.span, "pattern types are unimplemented"),
         };
 
         hir::Ty { kind, span: self.lower_span(t.span), hir_id: self.lower_node_id(t.id) }
