@@ -12,7 +12,7 @@ use crate::astconv::errors::prohibit_assoc_ty_binding;
 use crate::astconv::generics::{check_generic_arg_count, create_args_for_parent_generic_args};
 use crate::bounds::Bounds;
 use crate::collect::HirPlaceholderCollector;
-use crate::errors::AmbiguousLifetimeBound;
+use crate::errors::{AmbiguousLifetimeBound, WildPatTy};
 use crate::middle::resolve_bound_vars as rbv;
 use crate::require_c_abi_if_c_variadic;
 use rustc_ast::TraitObjectSyntax;
@@ -2558,7 +2558,25 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 // handled specially and will not descend into this routine.
                 self.ty_infer(None, ast_ty.span)
             }
-            hir::TyKind::Pat(..) => span_bug!(ast_ty.span, "{ast_ty:#?}"),
+            hir::TyKind::Pat(_ty, pat) => match pat.kind {
+                hir::PatKind::Wild => {
+                    let err = tcx.dcx().emit_err(WildPatTy { span: pat.span });
+                    Ty::new_error(tcx, err)
+                }
+                hir::PatKind::Binding(_, _, _, _) => todo!(),
+                hir::PatKind::Struct(_, _, _) => todo!(),
+                hir::PatKind::TupleStruct(_, _, _) => todo!(),
+                hir::PatKind::Or(_) => todo!(),
+                hir::PatKind::Path(_) => todo!(),
+                hir::PatKind::Tuple(_, _) => todo!(),
+                hir::PatKind::Box(_) => todo!(),
+                hir::PatKind::Ref(_, _) => todo!(),
+                hir::PatKind::Lit(_) => todo!(),
+                hir::PatKind::Range(_, _, _) => Ty::new_misc_error(tcx),
+                hir::PatKind::Slice(_, _, _) => todo!(),
+                hir::PatKind::Never => todo!(),
+                hir::PatKind::Err(e) => Ty::new_error(tcx, e),
+            },
             hir::TyKind::Err(guar) => Ty::new_error(tcx, *guar),
         };
 
