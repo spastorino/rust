@@ -82,6 +82,7 @@ impl Target {
             ItemKind::TyAlias(..) => Target::TyAlias,
             ItemKind::OpaqueTy(ref opaque) => {
                 if opaque.in_trait {
+                    // FIXME I guess this goes away and we produce Target::OpaqueTy
                     Target::ImplTraitPlaceholder
                 } else {
                     Target::OpaqueTy

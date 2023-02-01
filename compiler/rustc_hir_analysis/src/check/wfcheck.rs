@@ -1551,6 +1551,8 @@ fn check_return_position_impl_trait_in_trait_bounds<'tcx>(
         for arg in fn_output.walk() {
             if let ty::GenericArgKind::Type(ty) = arg.unpack()
                 && let ty::Alias(ty::Opaque, proj) = ty.kind()
+                // FIXME I guess we should just remove this function and use
+                // `check_associated_type_bounds`
                 && tcx.def_kind(proj.def_id) == DefKind::ImplTraitPlaceholder
                 && tcx.impl_trait_in_trait_parent(proj.def_id) == fn_def_id.to_def_id()
             {

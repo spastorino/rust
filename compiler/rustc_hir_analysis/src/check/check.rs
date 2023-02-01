@@ -567,6 +567,7 @@ fn check_item_type(tcx: TyCtxt<'_>, id: hir::ItemId) {
         DefKind::OpaqueTy => {
             check_opaque(tcx, id);
         }
+        // FIXME I guess this just goes away and we use the above arm.
         DefKind::ImplTraitPlaceholder => {
             let parent = tcx.impl_trait_in_trait_parent(id.owner_id.to_def_id());
             // Only check the validity of this opaque type if the function has a default body

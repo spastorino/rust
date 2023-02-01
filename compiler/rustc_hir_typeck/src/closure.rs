@@ -714,6 +714,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 .find_map(|(p, s)| get_future_output(p, s))?,
             ty::Error(_) => return None,
             ty::Alias(ty::Projection, proj)
+                // FIXME I think we should remove all this code and is going to be handled with the
+                // code above.
                 if self.tcx.def_kind(proj.def_id) == DefKind::ImplTraitPlaceholder =>
             {
                 self.tcx
