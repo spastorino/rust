@@ -1030,6 +1030,7 @@ fn should_encode_type(tcx: TyCtxt<'_>, def_id: LocalDefId, def_kind: DefKind) ->
         | DefKind::AnonConst
         | DefKind::InlineConst => true,
 
+        // FIXME I guess this should just be removed.
         DefKind::ImplTraitPlaceholder => {
             let parent_def_id = tcx.impl_trait_in_trait_parent(def_id.to_def_id());
             let assoc_item = tcx.associated_item(parent_def_id);
@@ -1124,6 +1125,9 @@ fn should_encode_trait_impl_trait_tys(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     tcx.fn_sig(trait_item_def_id).subst_identity().skip_binder().output().walk().any(|arg| {
         if let ty::GenericArgKind::Type(ty) = arg.unpack()
             && let ty::Alias(ty::Projection, data) = ty.kind()
+            // FIXME change this check and use `opt_rpitit_info instead.
+            // FIXME Or find a different way to encode trait_impl_trait_tys. Like encoding them
+            // when we encode rpitits (the problem is that rpitits encoding if more fine grained)
             && tcx.def_kind(data.def_id) == DefKind::ImplTraitPlaceholder
         {
             true

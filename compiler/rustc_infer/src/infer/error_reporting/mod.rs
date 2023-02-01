@@ -1745,6 +1745,8 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                                 )
                             }
                             (true, ty::Alias(ty::Projection, proj))
+                                // FIXME: no idea, I guess diagnostics are going to regress and at
+                                // that point we can check this solution.
                                 if self.tcx.def_kind(proj.def_id)
                                     == DefKind::ImplTraitPlaceholder =>
                             {

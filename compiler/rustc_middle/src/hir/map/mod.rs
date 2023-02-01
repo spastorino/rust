@@ -188,6 +188,7 @@ impl<'hir> Map<'hir> {
                 ItemKind::Mod(..) => DefKind::Mod,
                 ItemKind::OpaqueTy(ref opaque) => {
                     if opaque.in_trait {
+                        // FIXME we should change this to Projection
                         DefKind::ImplTraitPlaceholder
                     } else {
                         DefKind::OpaqueTy
