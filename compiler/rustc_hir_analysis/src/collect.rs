@@ -1419,23 +1419,7 @@ fn rpitit_associated_item(tcx: TyCtxt<'_>, opaque_ty_def_id: LocalDefId) -> Opti
         trait_assoc_ty
             .type_of(tcx.mk_opaque(def_id, InternalSubsts::identity_for_item(tcx, def_id)));
 
-        // FIXME
-        trait_assoc_ty.explicit_item_bounds({
-            let hir_id = tcx.hir().local_def_id_to_hir_id(opaque_ty_def_id);
-            match tcx.hir().get(hir_id) {
-                hir::Node::Item(hir::Item {
-                    kind: hir::ItemKind::OpaqueTy(hir::OpaqueTy { bounds, .. }),
-                    span,
-                    ..
-                }) => {
-                    let item_ty = tcx.mk_projection(def_id, InternalSubsts::identity_for_item(tcx, def_id));
-                    let res = crate::collect::item_bounds::associated_type_bounds(tcx, opaque_ty_def_id.to_def_id(), bounds, item_ty, *span);
-                    debug!("explicit_item_bounds: {:?} = {:?}", local_def_id, res);
-                    res
-                }
-                _ => bug!("item_bounds called on {:?}", def_id),
-            }
-        });
+        trait_assoc_ty.opt_rpitit_info(Some((fn_def_id, Some(opaque_ty_def_id.to_def_id()))));
 
         Some(local_def_id)
     } else {
@@ -1472,7 +1456,7 @@ fn impl_assoc_items_for_rpitits(tcx: TyCtxt<'_>, impl_fn_def_id: DefId) -> &'_ [
 
             impl_assoc_ty.opt_local_def_id_to_hir_id(None);
 
-            impl_assoc_ty.opt_rpitit_info(Some(impl_fn_def_id));
+            impl_assoc_ty.opt_rpitit_info(Some((impl_fn_def_id, None)));
 
             // FIXME we probably want the following:
             // impl_assoc_ty.impl_defaultness(tcx.impl_defaultness());

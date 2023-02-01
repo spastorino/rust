@@ -79,6 +79,13 @@ pub(super) fn explicit_item_bounds(
     tcx: TyCtxt<'_>,
     def_id: DefId,
 ) -> &'_ [(ty::Predicate<'_>, Span)] {
+    let (self_ty_def_id, def_id) =
+        if let Some((_, Some(opaque_ty_def_id))) = tcx.opt_rpitit_info(def_id) {
+            (def_id, opaque_ty_def_id)
+        } else {
+            (def_id, def_id)
+        };
+
     let hir_id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
     match tcx.hir().get(hir_id) {
         hir::Node::TraitItem(hir::TraitItem {
@@ -86,7 +93,10 @@ pub(super) fn explicit_item_bounds(
             span,
             ..
         }) => {
-            let item_ty = tcx.mk_projection(def_id, InternalSubsts::identity_for_item(tcx, def_id));
+            let item_ty = tcx.mk_projection(
+                self_ty_def_id,
+                InternalSubsts::identity_for_item(tcx, self_ty_def_id),
+            );
             associated_type_bounds(tcx, def_id, bounds, item_ty, *span)
         }
         hir::Node::Item(hir::Item {
