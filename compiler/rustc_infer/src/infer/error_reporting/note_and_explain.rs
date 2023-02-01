@@ -75,6 +75,7 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                         diag.note("an associated type was expected, but a different one was found");
                     }
                     (ty::Param(p), ty::Alias(ty::Projection, proj)) | (ty::Alias(ty::Projection, proj), ty::Param(p))
+                        // FIXME no idea, wait for diagnostics to fail
                         if tcx.def_kind(proj.def_id) != DefKind::ImplTraitPlaceholder =>
                     {
                         let p_def_id = tcx
@@ -222,6 +223,7 @@ impl<T> Trait<T> for X {
                             diag.span_label(p_span, "this type parameter");
                         }
                     }
+                    // FIXME no idea, wait for diagnostics to fail
                     (ty::Alias(ty::Projection, proj_ty), _) if tcx.def_kind(proj_ty.def_id) != DefKind::ImplTraitPlaceholder => {
                         self.expected_projection(
                             diag,
@@ -231,6 +233,7 @@ impl<T> Trait<T> for X {
                             cause.code(),
                         );
                     }
+                    // FIXME no idea, wait for diagnostics to fail
                     (_, ty::Alias(ty::Projection, proj_ty)) if tcx.def_kind(proj_ty.def_id) != DefKind::ImplTraitPlaceholder => {
                         let msg = format!(
                             "consider constraining the associated type `{}` to `{}`",

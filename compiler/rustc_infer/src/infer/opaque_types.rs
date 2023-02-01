@@ -489,6 +489,7 @@ where
                 }
             }
 
+            // FIXME this can just go away and we would use the arm from above.
             ty::Alias(ty::Projection, proj)
                 if self.tcx.def_kind(proj.def_id) == DefKind::ImplTraitPlaceholder =>
             {
@@ -563,6 +564,7 @@ impl<'tcx> InferCtxt<'tcx> {
             let predicate = predicate.fold_with(&mut BottomUpFolder {
                 tcx,
                 ty_op: |ty| match *ty.kind() {
+                    // FIXME I guess we remove all this arm
                     // We can't normalize associated types from `rustc_infer`,
                     // but we can eagerly register inference variables for them.
                     // FIXME(RPITIT): Don't replace RPITITs with inference vars.
@@ -586,6 +588,7 @@ impl<'tcx> InferCtxt<'tcx> {
                     {
                         hidden_ty
                     }
+                    // FIXME I guess we just remove this arm.
                     // FIXME(RPITIT): This can go away when we move to associated types
                     ty::Alias(
                         ty::Projection,

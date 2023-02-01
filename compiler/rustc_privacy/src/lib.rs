@@ -121,6 +121,7 @@ where
     fn visit_projection_ty(&mut self, projection: ty::AliasTy<'tcx>) -> ControlFlow<V::BreakTy> {
         let tcx = self.def_id_visitor.tcx();
         let (trait_ref, assoc_substs) =
+            // FIXME we just stick with the then part of the if and remove the else and the check
             if tcx.def_kind(projection.def_id) != DefKind::ImplTraitPlaceholder {
                 projection.trait_ref_and_own_substs(tcx)
             } else {

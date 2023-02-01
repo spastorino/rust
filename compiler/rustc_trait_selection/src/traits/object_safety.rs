@@ -854,6 +854,7 @@ fn contains_illegal_self_type_reference<'tcx, T: TypeVisitable<'tcx>>(
                         ControlFlow::Continue(())
                     }
                 }
+                // FIXME: remove this arm
                 ty::Alias(ty::Projection, ref data)
                     if self.tcx.def_kind(data.def_id) == DefKind::ImplTraitPlaceholder =>
                 {
@@ -922,6 +923,7 @@ pub fn contains_illegal_impl_trait_in_trait<'tcx>(
     ty.skip_binder().walk().find_map(|arg| {
         if let ty::GenericArgKind::Type(ty) = arg.unpack()
             && let ty::Alias(ty::Projection, proj) = ty.kind()
+            // FIXME change this check and use `opt_rpitit_info instead.
             && tcx.def_kind(proj.def_id) == DefKind::ImplTraitPlaceholder
         {
             Some(MethodViolationCode::ReferencesImplTraitInTrait(tcx.def_span(proj.def_id)))
