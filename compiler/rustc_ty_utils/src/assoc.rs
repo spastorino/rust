@@ -248,8 +248,7 @@ fn associated_item_for_impl_trait_in_trait(
         tcx.mk_opaque(def_id, InternalSubsts::identity_for_item(tcx, def_id)),
     ));
 
-    // FIXME
-    trait_assoc_ty.explicit_item_bounds(&[]);
+    trait_assoc_ty.opt_rpitit_info(Some((fn_def_id, Some(opaque_ty_def_id.to_def_id()))));
 
     local_def_id
 }
@@ -266,6 +265,8 @@ fn impl_associated_item_for_impl_trait_in_trait(
 
     let span = tcx.def_span(trait_assoc_def_id);
     let impl_assoc_ty = tcx.at(span).create_def(impl_def_id, DefPathData::ImplTraitAssocTy);
+
+    impl_assoc_ty.opt_rpitit_info(Some((impl_fn_def_id.to_def_id(), None)));
 
     impl_assoc_ty.def_id()
 }
