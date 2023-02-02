@@ -1008,6 +1008,7 @@ impl<'tcx> EvalCtxt<'_, 'tcx> {
             | ty::Float(_)
             | ty::Str
             | ty::Array(_, _)
+            | ty::Pat(_, _)
             | ty::Slice(_)
             | ty::RawPtr(_)
             | ty::Ref(_, _, _)

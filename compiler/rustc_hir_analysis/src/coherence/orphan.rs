@@ -228,6 +228,11 @@ fn do_orphan_check_impl<'tcx>(
                 (LocalImpl::Disallow { problematic_kind }, NonlocalImpl::DisallowOther)
             }
 
+            ty::Pat(..) => (
+                LocalImpl::Disallow { problematic_kind: "pattern type" },
+                NonlocalImpl::DisallowOther,
+            ),
+
             ty::Bool
             | ty::Char
             | ty::Int(..)

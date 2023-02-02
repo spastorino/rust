@@ -347,6 +347,11 @@ pub trait Visitor<'v>: Sized {
     fn visit_ty(&mut self, t: &'v Ty<'v>) {
         walk_ty(self, t)
     }
+    fn visit_pattern_type_pattern(&mut self, _p: &'v Pat<'v>) {
+        // Do nothing. Only a few visitors need to know the details of the pattern type,
+        // and they opt into it. All other visitors will just choke on our fake patterns
+        // because they aren't in a body.
+    }
     fn visit_generic_param(&mut self, p: &'v GenericParam<'v>) {
         walk_generic_param(self, p)
     }
@@ -857,7 +862,7 @@ pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty<'v>) {
         }
         TyKind::Pat(ty, pat) => {
             visitor.visit_ty(ty);
-            visitor.visit_pat(pat)
+            visitor.visit_pattern_type_pattern(pat);
         }
     }
 }

@@ -143,7 +143,10 @@ impl<'tcx> InherentCollect<'tcx> {
 
         let id = id.owner_id.def_id;
         let item_span = self.tcx.def_span(id);
-        let self_ty = self.tcx.type_of(id).instantiate_identity();
+        let mut self_ty = self.tcx.type_of(id).instantiate_identity();
+        while let ty::Pat(base, _) = *self_ty.kind() {
+            self_ty = base;
+        }
         match *self_ty.kind() {
             ty::Adt(def, _) => self.check_def_id(id, self_ty, def.did()),
             ty::Foreign(did) => self.check_def_id(id, self_ty, did),
@@ -153,6 +156,7 @@ impl<'tcx> InherentCollect<'tcx> {
             ty::Dynamic(..) => {
                 Err(self.tcx.dcx().emit_err(errors::InherentDyn { span: item_span }))
             }
+            ty::Pat(_, _) => unreachable!(),
             ty::Bool
             | ty::Char
             | ty::Int(_)

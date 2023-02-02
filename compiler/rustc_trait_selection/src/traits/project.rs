@@ -1877,6 +1877,7 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
                         | ty::Foreign(_)
                         | ty::Str
                         | ty::Array(..)
+                        | ty::Pat(..)
                         | ty::Slice(_)
                         | ty::RawPtr(..)
                         | ty::Ref(..)
@@ -1927,7 +1928,8 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
                         | ty::Float(_)
                         | ty::Str
                         | ty::Array(..)
-                        | ty::Slice(_)
+                        | ty::Pat(..)
+                    | ty::Slice(_)
                         | ty::RawPtr(..)
                         | ty::Ref(..)
                         | ty::FnDef(..)

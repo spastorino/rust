@@ -50,7 +50,9 @@ pub(in crate::solve) fn instantiate_constituent_tys_for_auto_trait<'tcx>(
             Ok(vec![ty::Binder::dummy(element_ty)])
         }
 
-        ty::Array(element_ty, _) | ty::Slice(element_ty) => Ok(vec![ty::Binder::dummy(element_ty)]),
+        ty::Pat(element_ty, _) | ty::Array(element_ty, _) | ty::Slice(element_ty) => {
+            Ok(vec![ty::Binder::dummy(element_ty)])
+        }
 
         ty::Tuple(tys) => {
             // (T1, ..., Tn) -- meets any bound that all of T1...Tn meet
@@ -133,6 +135,7 @@ pub(in crate::solve) fn instantiate_constituent_tys_for_sized_trait<'tcx>(
         | ty::Coroutine(..)
         | ty::CoroutineWitness(..)
         | ty::Array(..)
+        | ty::Pat(..)
         | ty::Closure(..)
         | ty::CoroutineClosure(..)
         | ty::Never
@@ -177,6 +180,7 @@ pub(in crate::solve) fn instantiate_constituent_tys_for_copy_clone_trait<'tcx>(
         | ty::Float(_)
         | ty::Char
         | ty::RawPtr(..)
+        | ty::Pat(..)
         | ty::Never
         | ty::Ref(_, _, Mutability::Not)
         | ty::Array(..) => Err(NoSolution),
@@ -300,6 +304,7 @@ pub(in crate::solve) fn extract_tupled_inputs_and_output_from_callable<'tcx>(
         | ty::CoroutineWitness(..)
         | ty::Never
         | ty::Tuple(_)
+        | ty::Pat(_, _)
         | ty::Alias(_, _)
         | ty::Param(_)
         | ty::Placeholder(..)
@@ -481,6 +486,7 @@ pub(in crate::solve) fn extract_tupled_inputs_and_output_from_async_callable<'tc
         | ty::Foreign(_)
         | ty::Str
         | ty::Array(_, _)
+        | ty::Pat(_, _)
         | ty::Slice(_)
         | ty::RawPtr(_)
         | ty::Ref(_, _, _)

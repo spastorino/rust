@@ -89,6 +89,7 @@ pub use self::context::{
 pub use self::instance::{Instance, InstanceDef, ShortInstance, UnusedGenericParams};
 pub use self::list::List;
 pub use self::parameterized::ParameterizedOverTcx;
+pub use self::pattern::{Pattern, PatternKind};
 pub use self::predicate::{
     Clause, ClauseKind, CoercePredicate, ExistentialPredicate, ExistentialProjection,
     ExistentialTraitRef, NormalizesTo, OutlivesPredicate, PolyCoercePredicate,
@@ -129,6 +130,7 @@ pub mod fold;
 pub mod inhabitedness;
 pub mod layout;
 pub mod normalize_erasing_regions;
+pub mod pattern;
 pub mod print;
 pub mod relate;
 pub mod trait_def;

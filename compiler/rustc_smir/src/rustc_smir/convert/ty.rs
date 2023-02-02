@@ -356,6 +356,9 @@ impl<'tcx> Stable<'tcx> for ty::TyKind<'tcx> {
             ty::Array(ty, constant) => {
                 TyKind::RigidTy(RigidTy::Array(ty.stable(tables), constant.stable(tables)))
             }
+            ty::Pat(ty, pat) => {
+                TyKind::RigidTy(RigidTy::Pat(ty.stable(tables), pat.stable(tables)))
+            }
             ty::Slice(ty) => TyKind::RigidTy(RigidTy::Slice(ty.stable(tables))),
             ty::RawPtr(ty::TypeAndMut { ty, mutbl }) => {
                 TyKind::RigidTy(RigidTy::RawPtr(ty.stable(tables), mutbl.stable(tables)))
@@ -407,6 +410,20 @@ impl<'tcx> Stable<'tcx> for ty::TyKind<'tcx> {
             ty::Placeholder(..) | ty::Infer(_) | ty::Error(_) => {
                 unreachable!();
             }
+        }
+    }
+}
+
+impl<'tcx> Stable<'tcx> for ty::Pattern<'tcx> {
+    type T = stable_mir::ty::Pattern;
+
+    fn stable(&self, tables: &mut Tables<'_>) -> Self::T {
+        match **self {
+            ty::PatternKind::Range { start, end, include_end } => stable_mir::ty::Pattern::Range {
+                start: start.stable(tables),
+                end: end.stable(tables),
+                include_end,
+            },
         }
     }
 }

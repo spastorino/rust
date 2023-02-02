@@ -615,11 +615,7 @@ impl<'a, 'tcx> WfPredicates<'a, 'tcx> {
                 // Can only infer to `ty::Float(_)`.
                 ty::Infer(ty::FloatVar(_)) => {}
 
-                ty::Slice(subty) => {
-                    self.require_sized(subty, traits::SliceOrArrayElem);
-                }
-
-                ty::Array(subty, _) => {
+                ty::Pat(subty, _) | ty::Slice(subty) | ty::Array(subty, _) => {
                     self.require_sized(subty, traits::SliceOrArrayElem);
                     // Note that we handle the len is implicitly checked while walking `arg`.
                 }
