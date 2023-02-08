@@ -716,7 +716,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ty::Alias(ty::Projection, proj)
                 // FIXME I think we should remove all this code and is going to be handled with the
                 // code above.
-                if self.tcx.def_kind(proj.def_id) == DefKind::ImplTraitPlaceholder =>
+                if self.tcx.def_kind(proj.def_id) == DefKind::OpaqueBodyTy =>
             {
                 self.tcx
                     .bound_explicit_item_bounds(proj.def_id)

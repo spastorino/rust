@@ -427,7 +427,7 @@ fn clean_projection<'tcx>(
     def_id: Option<DefId>,
 ) -> Type {
     // FIXME no idea
-    if cx.tcx.def_kind(ty.skip_binder().def_id) == DefKind::ImplTraitPlaceholder {
+    if cx.tcx.def_kind(ty.skip_binder().def_id) == DefKind::OpaqueBodyTy {
         let bounds = cx
             .tcx
             .explicit_item_bounds(ty.skip_binder().def_id)

@@ -962,7 +962,7 @@ impl<'a, 'b, 'tcx> BuildReducedGraphVisitor<'a, 'b, 'tcx> {
                 | DefKind::TyAlias
                 | DefKind::ForeignTy
                 | DefKind::OpaqueTy
-                | DefKind::ImplTraitPlaceholder
+                | DefKind::OpaqueBodyTy
                 | DefKind::TraitAlias
                 | DefKind::AssocTy,
                 _,

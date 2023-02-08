@@ -132,7 +132,7 @@ fixed_size_enum! {
         ( AnonConst                                )
         ( InlineConst                              )
         ( OpaqueTy                                 )
-        ( ImplTraitPlaceholder                     )
+        ( OpaqueBodyTy                             )
         ( Field                                    )
         ( LifetimeParam                            )
         ( GlobalAsm                                )

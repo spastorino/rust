@@ -837,7 +837,7 @@ fn should_encode_visibility(def_kind: DefKind) -> bool {
         | DefKind::Use
         | DefKind::ForeignMod
         | DefKind::OpaqueTy
-        | DefKind::ImplTraitPlaceholder
+        | DefKind::OpaqueBodyTy
         | DefKind::Impl { .. }
         | DefKind::Field => true,
         DefKind::TyParam
@@ -870,7 +870,7 @@ fn should_encode_stability(def_kind: DefKind) -> bool {
         | DefKind::ForeignMod
         | DefKind::TyAlias
         | DefKind::OpaqueTy
-        | DefKind::ImplTraitPlaceholder
+        | DefKind::OpaqueBodyTy
         | DefKind::Enum
         | DefKind::Union
         | DefKind::Impl { .. }
@@ -937,7 +937,7 @@ fn should_encode_variances(def_kind: DefKind) -> bool {
         | DefKind::Enum
         | DefKind::Variant
         | DefKind::OpaqueTy
-        | DefKind::ImplTraitPlaceholder
+        | DefKind::OpaqueBodyTy
         | DefKind::Fn
         | DefKind::Ctor(..)
         | DefKind::AssocFn => true,
@@ -987,7 +987,7 @@ fn should_encode_generics(def_kind: DefKind) -> bool {
         | DefKind::AnonConst
         | DefKind::InlineConst
         | DefKind::OpaqueTy
-        | DefKind::ImplTraitPlaceholder
+        | DefKind::OpaqueBodyTy
         | DefKind::Impl { .. }
         | DefKind::Field
         | DefKind::TyParam
@@ -1028,7 +1028,7 @@ fn should_encode_type(tcx: TyCtxt<'_>, def_id: LocalDefId, def_kind: DefKind) ->
         | DefKind::InlineConst => true,
 
         // FIXME I guess this should just be removed.
-        DefKind::ImplTraitPlaceholder => {
+        DefKind::OpaqueBodyTy => {
             let parent_def_id = tcx.impl_trait_in_trait_parent(def_id.to_def_id());
             let assoc_item = tcx.associated_item(parent_def_id);
             match assoc_item.container {
@@ -1080,7 +1080,7 @@ fn should_encode_const(def_kind: DefKind) -> bool {
         | DefKind::Static(..)
         | DefKind::TyAlias
         | DefKind::OpaqueTy
-        | DefKind::ImplTraitPlaceholder
+        | DefKind::OpaqueBodyTy
         | DefKind::ForeignTy
         | DefKind::Impl { .. }
         | DefKind::AssocFn
@@ -1124,7 +1124,7 @@ fn should_encode_trait_impl_trait_tys(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
             // FIXME change this check and use `opt_rpitit_info instead.
             // FIXME Or find a different way to encode trait_impl_trait_tys. Like encoding them
             // when we encode rpitits (the problem is that rpitits encoding if more fine grained)
-            && tcx.def_kind(data.def_id) == DefKind::ImplTraitPlaceholder
+            && tcx.def_kind(data.def_id) == DefKind::OpaqueBodyTy
         {
             true
         } else {

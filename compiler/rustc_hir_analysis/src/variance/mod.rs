@@ -52,7 +52,7 @@ fn variances_of(tcx: TyCtxt<'_>, item_def_id: DefId) -> &[ty::Variance] {
         | DefKind::Union
         | DefKind::Variant
         | DefKind::Ctor(..) => {}
-        DefKind::OpaqueTy | DefKind::ImplTraitPlaceholder => {
+        DefKind::OpaqueTy | DefKind::OpaqueBodyTy => {
             return variance_of_opaque(tcx, item_def_id.expect_local());
         }
         _ => {
@@ -114,7 +114,7 @@ fn variance_of_opaque(tcx: TyCtxt<'_>, item_def_id: LocalDefId) -> &[ty::Varianc
                 ty::Alias(_, ty::AliasTy { def_id, substs, .. })
                     if matches!(
                         self.tcx.def_kind(*def_id),
-                        DefKind::OpaqueTy | DefKind::ImplTraitPlaceholder
+                        DefKind::OpaqueTy | DefKind::OpaqueBodyTy
                     ) =>
                 {
                     self.visit_opaque(*def_id, substs)

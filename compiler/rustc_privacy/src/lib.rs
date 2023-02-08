@@ -129,7 +129,7 @@ where
         let tcx = self.def_id_visitor.tcx();
         let (trait_ref, assoc_substs) =
             // FIXME we just stick with the then part of the if and remove the else and the check
-            if tcx.def_kind(projection.def_id) != DefKind::ImplTraitPlaceholder {
+            if tcx.def_kind(projection.def_id) != DefKind::OpaqueBodyTy {
                 projection.trait_ref_and_own_substs(tcx)
             } else {
                 // HACK(RPITIT): Remove this when RPITITs are lowered to regular assoc tys
@@ -601,7 +601,7 @@ impl<'tcx> EmbargoVisitor<'tcx> {
             | DefKind::ForeignTy
             | DefKind::Fn
             | DefKind::OpaqueTy
-            | DefKind::ImplTraitPlaceholder
+            | DefKind::OpaqueBodyTy
             | DefKind::AssocFn
             | DefKind::Trait
             | DefKind::TyParam

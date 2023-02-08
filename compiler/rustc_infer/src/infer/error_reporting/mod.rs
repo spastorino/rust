@@ -362,7 +362,7 @@ impl<'tcx> InferCtxt<'tcx> {
             ty::Alias(_, ty::AliasTy { def_id, substs, .. })
                 if matches!(
                     self.tcx.def_kind(def_id),
-                    DefKind::OpaqueTy | DefKind::ImplTraitPlaceholder
+                    DefKind::OpaqueTy | DefKind::OpaqueBodyTy
                 ) =>
             {
                 (def_id, substs)
@@ -1758,7 +1758,7 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                                 // FIXME: no idea, I guess diagnostics are going to regress and at
                                 // that point we can check this solution.
                                 if self.tcx.def_kind(proj.def_id)
-                                    == DefKind::ImplTraitPlaceholder =>
+                                    == DefKind::OpaqueBodyTy =>
                             {
                                 let sm = self.tcx.sess.source_map();
                                 let pos = sm.lookup_char_pos(self.tcx.def_span(proj.def_id).lo());

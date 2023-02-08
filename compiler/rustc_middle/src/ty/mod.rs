@@ -2540,7 +2540,7 @@ impl<'tcx> TyCtxt<'tcx> {
 
     pub fn impl_trait_in_trait_parent(self, mut def_id: DefId) -> DefId {
         while let def_kind = self.def_kind(def_id) && def_kind != DefKind::AssocFn {
-            debug_assert_eq!(def_kind, DefKind::ImplTraitPlaceholder);
+            debug_assert_eq!(def_kind, DefKind::OpaqueBodyTy);
             def_id = self.parent(def_id);
         }
         def_id

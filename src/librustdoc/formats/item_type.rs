@@ -136,7 +136,7 @@ impl From<DefKind> for ItemType {
             | DefKind::AnonConst
             | DefKind::InlineConst
             | DefKind::OpaqueTy
-            | DefKind::ImplTraitPlaceholder
+            | DefKind::OpaqueBodyTy
             | DefKind::Field
             | DefKind::LifetimeParam
             | DefKind::GlobalAsm

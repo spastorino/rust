@@ -729,7 +729,7 @@ pub trait PrettyPrinter<'tcx>:
             ty::Alias(ty::Projection, ref data) => {
                 if !(self.should_print_verbose() || NO_QUERIES.with(|q| q.get()))
                     // FIXME use opt_rpitit_info
-                    && self.tcx().def_kind(data.def_id) == DefKind::ImplTraitPlaceholder
+                    && self.tcx().def_kind(data.def_id) == DefKind::OpaqueBodyTy
                 {
                     return self.pretty_print_opaque_impl_type(data.def_id, data.substs);
                 } else {
