@@ -1255,7 +1255,7 @@ pub struct AliasTy<'tcx> {
 impl<'tcx> AliasTy<'tcx> {
     pub fn kind(self, tcx: TyCtxt<'tcx>) -> ty::AliasKind {
         match tcx.def_kind(self.def_id) {
-            DefKind::AssocTy | DefKind::ImplTraitPlaceholder => ty::Projection,
+            DefKind::AssocTy | DefKind::OpaqueBodyTy => ty::Projection,
             DefKind::OpaqueTy => ty::Opaque,
             kind => bug!("unexpected DefKind in AliasTy: {kind:?}"),
         }
@@ -1271,9 +1271,7 @@ impl<'tcx> AliasTy<'tcx> {
     pub fn trait_def_id(self, tcx: TyCtxt<'tcx>) -> DefId {
         match tcx.def_kind(self.def_id) {
             DefKind::AssocTy | DefKind::AssocConst => tcx.parent(self.def_id),
-            DefKind::ImplTraitPlaceholder => {
-                tcx.parent(tcx.impl_trait_in_trait_parent(self.def_id))
-            }
+            DefKind::OpaqueBodyTy => tcx.parent(tcx.impl_trait_in_trait_parent(self.def_id)),
             kind => bug!("expected a projection AliasTy; found {kind:?}"),
         }
     }
