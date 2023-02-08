@@ -1605,7 +1605,7 @@ fn check_return_position_impl_trait_in_trait_bounds<'tcx>(
                 && let ty::Alias(ty::Projection, proj) = ty.kind()
                 // FIXME I guess we should just remove this function and use
                 // `check_associated_type_bounds`
-                && tcx.def_kind(proj.def_id) == DefKind::ImplTraitPlaceholder
+                && tcx.def_kind(proj.def_id) == DefKind::OpaqueBodyTy
                 && tcx.impl_trait_in_trait_parent(proj.def_id) == fn_def_id.to_def_id()
             {
                 let span = tcx.def_span(proj.def_id);

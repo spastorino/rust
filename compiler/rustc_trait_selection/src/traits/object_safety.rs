@@ -856,7 +856,7 @@ fn contains_illegal_self_type_reference<'tcx, T: TypeVisitable<'tcx>>(
                 }
                 // FIXME: remove this arm
                 ty::Alias(ty::Projection, ref data)
-                    if self.tcx.def_kind(data.def_id) == DefKind::ImplTraitPlaceholder =>
+                    if self.tcx.def_kind(data.def_id) == DefKind::OpaqueBodyTy =>
                 {
                     // We'll deny these later in their own pass
                     ControlFlow::Continue(())
@@ -924,7 +924,7 @@ pub fn contains_illegal_impl_trait_in_trait<'tcx>(
         if let ty::GenericArgKind::Type(ty) = arg.unpack()
             && let ty::Alias(ty::Projection, proj) = ty.kind()
             // FIXME change this check and use `opt_rpitit_info instead.
-            && tcx.def_kind(proj.def_id) == DefKind::ImplTraitPlaceholder
+            && tcx.def_kind(proj.def_id) == DefKind::OpaqueBodyTy
         {
             Some(MethodViolationCode::ReferencesImplTraitInTrait(tcx.def_span(proj.def_id)))
         } else {

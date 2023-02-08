@@ -491,7 +491,7 @@ where
 
             // FIXME this can just go away and we would use the arm from above.
             ty::Alias(ty::Projection, proj)
-                if self.tcx.def_kind(proj.def_id) == DefKind::ImplTraitPlaceholder =>
+                if self.tcx.def_kind(proj.def_id) == DefKind::OpaqueBodyTy =>
             {
                 // Skip lifetime parameters that are not captures.
                 let variances = self.tcx.variances_of(proj.def_id);
@@ -570,8 +570,7 @@ impl<'tcx> InferCtxt<'tcx> {
                     // FIXME(RPITIT): Don't replace RPITITs with inference vars.
                     ty::Alias(ty::Projection, projection_ty)
                         if !projection_ty.has_escaping_bound_vars()
-                            && tcx.def_kind(projection_ty.def_id)
-                                != DefKind::ImplTraitPlaceholder =>
+                            && tcx.def_kind(projection_ty.def_id) != DefKind::OpaqueBodyTy =>
                     {
                         self.infer_projection(
                             param_env,

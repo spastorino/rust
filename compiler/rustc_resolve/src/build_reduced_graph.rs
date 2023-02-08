@@ -954,7 +954,7 @@ impl<'a, 'b> BuildReducedGraphVisitor<'a, 'b> {
                 | DefKind::TyAlias
                 | DefKind::ForeignTy
                 | DefKind::OpaqueTy
-                | DefKind::ImplTraitPlaceholder
+                | DefKind::OpaqueBodyTy
                 | DefKind::TraitAlias
                 | DefKind::AssocTy,
                 _,

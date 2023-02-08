@@ -76,7 +76,7 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                     }
                     (ty::Param(p), ty::Alias(ty::Projection, proj)) | (ty::Alias(ty::Projection, proj), ty::Param(p))
                         // FIXME no idea, wait for diagnostics to fail
-                        if tcx.def_kind(proj.def_id) != DefKind::ImplTraitPlaceholder =>
+                        if tcx.def_kind(proj.def_id) != DefKind::OpaqueBodyTy =>
                     {
                         let p_def_id = tcx
                             .generics_of(body_owner_def_id)
@@ -224,7 +224,7 @@ impl<T> Trait<T> for X {
                         }
                     }
                     // FIXME no idea, wait for diagnostics to fail
-                    (ty::Alias(ty::Projection, proj_ty), _) if tcx.def_kind(proj_ty.def_id) != DefKind::ImplTraitPlaceholder => {
+                    (ty::Alias(ty::Projection, proj_ty), _) if tcx.def_kind(proj_ty.def_id) != DefKind::OpaqueBodyTy => {
                         self.expected_projection(
                             diag,
                             proj_ty,
@@ -234,7 +234,7 @@ impl<T> Trait<T> for X {
                         );
                     }
                     // FIXME no idea, wait for diagnostics to fail
-                    (_, ty::Alias(ty::Projection, proj_ty)) if tcx.def_kind(proj_ty.def_id) != DefKind::ImplTraitPlaceholder => {
+                    (_, ty::Alias(ty::Projection, proj_ty)) if tcx.def_kind(proj_ty.def_id) != DefKind::OpaqueBodyTy => {
                         let msg = format!(
                             "consider constraining the associated type `{}` to `{}`",
                             values.found, values.expected,
