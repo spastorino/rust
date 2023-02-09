@@ -209,9 +209,28 @@ fn check_static_inhabited(tcx: TyCtxt<'_>, def_id: LocalDefId) {
 /// projections that would result in "inheriting lifetimes".
 fn check_opaque(tcx: TyCtxt<'_>, id: hir::ItemId) {
     let item = tcx.hir().item(id);
-    let hir::ItemKind::OpaqueTy(hir::OpaqueTy { origin, .. }) = item.kind else {
-        tcx.sess.delay_span_bug(item.span, "expected opaque item");
-        return;
+
+    let origin = match item.kind {
+        hir::ItemKind::OpaqueTy(hir::OpaqueTy { origin, in_trait: true, .. }) => {
+            let parent = tcx.impl_trait_in_trait_parent(id.owner_id.to_def_id());
+            // Only check the validity of this opaque type if the function has a default body
+            if let hir::Node::TraitItem(hir::TraitItem {
+                kind: hir::TraitItemKind::Fn(_, hir::TraitFn::Provided(_)),
+                ..
+            }) = tcx.hir().get_by_def_id(parent.expect_local())
+            {
+                origin
+            } else {
+                return;
+            }
+        }
+
+        hir::ItemKind::OpaqueTy(hir::OpaqueTy { origin, in_trait: false, .. }) => origin,
+
+        _ => {
+            tcx.sess.delay_span_bug(item.span, "expected opaque item");
+            return;
+        }
     };
 
     // HACK(jynelson): trying to infer the type of `impl trait` breaks documenting
