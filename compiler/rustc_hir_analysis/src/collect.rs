@@ -1417,7 +1417,7 @@ fn rpitit_associated_item(tcx: TyCtxt<'_>, opaque_ty_def_id: LocalDefId) -> Opti
 
         // FIXME inject this conditionally if the trait method has a default body
         trait_assoc_ty
-            .type_of(tcx.mk_opaque(def_id, InternalSubsts::identity_for_item(tcx, def_id)));
+            .type_of(tcx.mk_opaque(opaque_ty_def_id.to_def_id(), InternalSubsts::identity_for_item(tcx, opaque_ty_def_id.to_def_id())));
 
         trait_assoc_ty.opt_rpitit_info(Some((fn_def_id, Some(opaque_ty_def_id.to_def_id()))));
 
