@@ -176,6 +176,11 @@ impl<'hir> Map<'hir> {
         self.tcx.local_def_id_to_hir_id(def_id)
     }
 
+    #[inline]
+    pub fn opt_local_def_id_to_hir_id(self, def_id: LocalDefId) -> Option<HirId> {
+        self.tcx.opt_local_def_id_to_hir_id(def_id)
+    }
+
     /// Do not call this function directly. The query should be called.
     pub(super) fn opt_def_kind(self, local_def_id: LocalDefId) -> Option<DefKind> {
         let hir_id = self.local_def_id_to_hir_id(local_def_id);
@@ -333,7 +338,8 @@ impl<'hir> Map<'hir> {
     }
 
     pub fn get_if_local(self, id: DefId) -> Option<Node<'hir>> {
-        id.as_local().and_then(|id| self.find(self.local_def_id_to_hir_id(id)))
+        id.as_local()
+            .and_then(|id| self.opt_local_def_id_to_hir_id(id).and_then(|hir_id| self.find(hir_id)))
     }
 
     pub fn get_generics(self, id: LocalDefId) -> Option<&'hir Generics<'hir>> {
