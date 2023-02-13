@@ -43,6 +43,9 @@ pub(super) fn compare_impl_method<'tcx>(
     impl_trait_ref: ty::TraitRef<'tcx>,
     trait_item_span: Option<Span>,
 ) {
+    if std::env::var("FAIL").is_ok() {
+        bug!("compare_impl_method call not expected");
+    }
     debug!("compare_impl_method(impl_trait_ref={:?})", impl_trait_ref);
 
     let impl_m_span = tcx.def_span(impl_m.def_id);
@@ -539,15 +542,20 @@ fn compare_asyncness<'tcx>(
     trait_m: &ty::AssocItem,
     trait_item_span: Option<Span>,
 ) -> Result<(), ErrorGuaranteed> {
+    debug!("compare_asyncness(impl_m={:?}, trait_m={:?})", impl_m, trait_m);
     if tcx.asyncness(trait_m.def_id) == hir::IsAsync::Async {
+        debug!("compare_asyncness asyncness=true");
         match tcx.fn_sig(impl_m.def_id).skip_binder().skip_binder().output().kind() {
             ty::Alias(ty::Opaque, ..) => {
                 // allow both `async fn foo()` and `fn foo() -> impl Future`
+                debug!("compare_asyncness ty::Alias(ty::Opaque, ..)");
             }
             ty::Error(_) => {
                 // We don't know if it's ok, but at least it's already an error.
+                debug!("compare_asyncness ty::Error(_)");
             }
             _ => {
+                debug!("compare_asyncness _ case");
                 return Err(tcx.sess.emit_err(crate::errors::AsyncTraitImplShouldBeAsync {
                     span: impl_m_span,
                     method_name: trait_m.name,
