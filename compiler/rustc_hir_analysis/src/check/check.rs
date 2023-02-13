@@ -742,6 +742,7 @@ fn check_impl_items_against_trait<'tcx>(
     impl_id: LocalDefId,
     impl_trait_ref: ty::TraitRef<'tcx>,
 ) {
+    debug!("check_impl_items_against_trait");
     // If the trait reference itself is erroneous (so the compilation is going
     // to fail), skip checking the items here -- the `impl_item` table in `tcx`
     // isn't populated for such impls.
