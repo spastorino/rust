@@ -1,7 +1,6 @@
 use crate::autoderef::Autoderef;
 use crate::constrained_generic_params::{identify_constrained_generic_params, Parameter};
 
-use hir::def::DefKind;
 use rustc_ast as ast;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexSet};
 use rustc_errors::{pluralize, struct_span_err, Applicability, DiagnosticBuilder, ErrorGuaranteed};
@@ -1553,8 +1552,8 @@ fn check_return_position_impl_trait_in_trait_bounds<'tcx>(
                 && let ty::Alias(ty::Opaque, proj) = ty.kind()
                 // FIXME I guess we should just remove this function and use
                 // `check_associated_type_bounds`
-                && tcx.def_kind(proj.def_id) == DefKind::OpaqueBodyTy
-                && tcx.impl_trait_in_trait_parent(proj.def_id) == fn_def_id.to_def_id()
+                && let Some((projs_fn_def_id, _)) = tcx.opt_rpitit_info(proj.def_id)
+                && projs_fn_def_id == fn_def_id.to_def_id()
             {
                 let span = tcx.def_span(proj.def_id);
                 let bounds = wfcx.tcx().explicit_item_bounds(proj.def_id);
