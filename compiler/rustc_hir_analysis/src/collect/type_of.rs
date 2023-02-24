@@ -244,6 +244,21 @@ fn get_path_containing_arg_in_pat<'hir>(
 }
 
 pub(super) fn type_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::EarlyBinder<Ty<'_>> {
+    if let Some((impl_fn_def_id, _)) = tcx.opt_rpitit_info(def_id) {
+        match tcx.collect_return_position_impl_trait_in_trait_tys(impl_fn_def_id) {
+            Ok(map) => {
+                let assoc_item = tcx.associated_item(def_id);
+                return ty::EarlyBinder(map[&assoc_item.trait_item_def_id.unwrap()]);
+            }
+            Err(_) => {
+                return ty::EarlyBinder(tcx.ty_error_with_message(
+                    DUMMY_SP,
+                    "Could not collect return position impl trait in trait tys",
+                ));
+            }
+        }
+    }
+
     let def_id = def_id.expect_local();
     use rustc_hir::*;
 

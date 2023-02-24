@@ -4,6 +4,7 @@ use rustc_hir::def::DefKind;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::definitions::DefPathData;
 use rustc_hir::intravisit::{self, Visitor};
+use rustc_hir::Defaultness;
 use rustc_middle::ty::{self, DefIdTree, InternalSubsts, TyCtxt, Visibility};
 use rustc_span::symbol::kw;
 
@@ -40,7 +41,21 @@ fn associated_item_def_ids(tcx: TyCtxt<'_>, def_id: DefId) -> &[DefId] {
                 ),
         ),
         hir::ItemKind::Impl(ref impl_) => tcx.arena.alloc_from_iter(
-            impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()),
+            impl_.items.iter().map(|impl_item_ref| impl_item_ref.id.owner_id.to_def_id()).chain(
+                impl_.of_trait.iter().flat_map(|_| {
+                    impl_
+                        .items
+                        .iter()
+                        .filter(|impl_item_ref| {
+                            matches!(impl_item_ref.kind, hir::AssocItemKind::Fn { .. })
+                        })
+                        .flat_map(|impl_item_ref| {
+                            let impl_fn_def_id = impl_item_ref.id.owner_id.to_def_id();
+                            tcx.associated_items_for_impl_trait_in_trait(impl_fn_def_id)
+                        })
+                        .map(|def_id| *def_id)
+                }),
+            ),
         ),
         _ => span_bug!(item.span, "associated_item_def_ids: not impl or trait"),
     }
@@ -263,10 +278,33 @@ fn impl_associated_item_for_impl_trait_in_trait(
 ) -> LocalDefId {
     let impl_def_id = tcx.local_parent(impl_fn_def_id);
 
+    // FIXME fix the span
     let span = tcx.def_span(trait_assoc_def_id);
     let impl_assoc_ty = tcx.at(span).create_def(impl_def_id, DefPathData::ImplTraitAssocTy);
 
+    let local_def_id = impl_assoc_ty.def_id();
+    let def_id = local_def_id.to_def_id();
+
     impl_assoc_ty.opt_rpitit_info(Some((impl_fn_def_id.to_def_id(), None)));
 
-    impl_assoc_ty.def_id()
+    impl_assoc_ty.associated_item(ty::AssocItem {
+        name: kw::Empty,
+        kind: ty::AssocKind::Type,
+        def_id,
+        trait_item_def_id: Some(trait_assoc_def_id.to_def_id()),
+        container: ty::ImplContainer,
+        fn_has_self_parameter: false,
+    });
+
+    impl_assoc_ty.opt_def_kind(Some(DefKind::AssocTy));
+
+    impl_assoc_ty.opt_local_def_id_to_hir_id(None);
+
+    // FIXME we probably want the following:
+    // impl_assoc_ty.impl_defaultness(tcx.impl_defaultness());
+    impl_assoc_ty.impl_defaultness(Defaultness::Final);
+
+    impl_assoc_ty.generics_of(tcx.generics_of(trait_assoc_def_id).clone());
+
+    local_def_id
 }
