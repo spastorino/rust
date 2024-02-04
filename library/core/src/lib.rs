@@ -111,6 +111,7 @@
 //
 // Library features:
 // tidy-alphabetical-start
+#![cfg_attr(not(bootstrap), feature(core_pattern_type))]
 #![feature(char_indices_offset)]
 #![feature(const_align_of_val)]
 #![feature(const_align_of_val_raw)]
@@ -201,6 +202,7 @@
 //
 // Language features:
 // tidy-alphabetical-start
+#![cfg_attr(not(bootstrap), feature(pattern_types))]
 #![feature(abi_unadjusted)]
 #![feature(adt_const_params)]
 #![feature(allow_internal_unsafe)]
