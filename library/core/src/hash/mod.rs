@@ -969,4 +969,17 @@ mod impls {
             metadata.hash(state);
         }
     }
+
+    // TODO generate integer types using a macro that exists but I need to search for
+    #[cfg(not(bootstrap))]
+    #[allow(ineffective_unstable_trait_impl)]
+    #[unstable(feature = "core_pattern_types", issue = "none")]
+    impl<const START: u32, const END: u32> Hash for crate::pattern_type!(u32 is START..=END) {
+        fn hash<H: crate::hash::Hasher>(&self, state: &mut H) {
+            // We probably don't want this and have a as_u32() inherent method for all pattern types
+            // SAFETY: it is always sound to convert a pattern type to its base type via transmute.
+            let inner: u32 = unsafe { crate::mem::transmute(*self) };
+            inner.hash(state);
+        }
+    }
 }

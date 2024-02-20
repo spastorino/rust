@@ -54,14 +54,6 @@ type NanoU32 = crate::pattern_type!(u32 is 0..=999_999_999);
 
 #[cfg(not(bootstrap))]
 #[stable(feature = "duration", since = "1.3.0")]
-impl crate::hash::Hash for NanoU32 {
-    fn hash<H: crate::hash::Hasher>(&self, state: &mut H) {
-        Nanoseconds(*self).as_u32().hash(state);
-    }
-}
-
-#[cfg(not(bootstrap))]
-#[stable(feature = "duration", since = "1.3.0")]
 impl Ord for NanoU32 {
     fn cmp(&self, other: &Self) -> crate::cmp::Ordering {
         Nanoseconds(*self).as_u32().cmp(&Nanoseconds(*other).as_u32())
