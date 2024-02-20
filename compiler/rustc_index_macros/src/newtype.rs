@@ -185,11 +185,21 @@ impl Parse for Newtype {
         Ok(Self(quote! {
             #(#attrs)*
             #[derive(Clone, Copy, PartialEq, Eq, Hash, #(#derive_paths),*)]
-            #[cfg_attr(#gate_rustc_only_cfg, rustc_layout_scalar_valid_range_end(#max))]
+            #[cfg_attr(all(bootstrap, #gate_rustc_only_cfg), rustc_layout_scalar_valid_range_end(#max))]
             #[cfg_attr(#gate_rustc_only_cfg, rustc_pass_by_value)]
+            #[cfg(bootstrap)]
             #vis struct #name {
                 private_use_as_methods_instead: u32,
             }
+
+            #[derive(Clone, Copy, PartialEq, Eq, Hash, #(#derive_paths),*)]
+            #[cfg(not(bootstrap))]
+            #vis struct #name {
+                private_use_as_methods_instead: Idx,
+            }
+
+            #[cfg(not(bootstrap))]
+            #vis type Idx = crate::pattern_type!(u32 is 0..=#max);
 
             #(#consts)*
 
