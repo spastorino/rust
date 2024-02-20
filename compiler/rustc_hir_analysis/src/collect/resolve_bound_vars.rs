@@ -762,6 +762,34 @@ impl<'a, 'tcx> Visitor<'tcx> for BoundVarContext<'a, 'tcx> {
     }
 
     #[instrument(level = "debug", skip(self))]
+    fn visit_pattern_type_pattern(&mut self, p: &'tcx hir::Pat<'tcx>) {
+        match p.kind {
+            hir::PatKind::Binding(_, _, _, _) => todo!(),
+            hir::PatKind::Struct(_, _, _) => todo!(),
+            hir::PatKind::TupleStruct(_, _, _) => todo!(),
+            hir::PatKind::Or(_) => todo!(),
+            hir::PatKind::Path(_) => todo!(),
+            hir::PatKind::Tuple(_, _) => todo!(),
+            hir::PatKind::Box(_) => todo!(),
+            hir::PatKind::Ref(_, _) => todo!(),
+            hir::PatKind::Lit(_) => todo!(),
+            hir::PatKind::Slice(_, _, _) => todo!(),
+            hir::PatKind::Never => todo!(),
+            hir::PatKind::Wild => {}
+            hir::PatKind::Err(_) => {}
+            hir::PatKind::Range(start, end, _) => {
+                if let Some(start) = start {
+                    self.visit_expr(start);
+                }
+
+                if let Some(end) = end {
+                    self.visit_expr(end);
+                }
+            }
+        }
+    }
+
+    #[instrument(level = "debug", skip(self))]
     fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem<'tcx>) {
         use self::hir::TraitItemKind::*;
         match trait_item.kind {
