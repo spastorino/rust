@@ -970,16 +970,23 @@ mod impls {
         }
     }
 
-    // TODO generate integer types using a macro that exists but I need to search for
-    #[cfg(not(bootstrap))]
-    #[allow(ineffective_unstable_trait_impl)]
-    #[unstable(feature = "core_pattern_types", issue = "none")]
-    impl<const START: u32, const END: u32> Hash for crate::pattern_type!(u32 is START..=END) {
-        fn hash<H: crate::hash::Hasher>(&self, state: &mut H) {
-            // We probably don't want this and have a as_u32() inherent method for all pattern types
-            // SAFETY: it is always sound to convert a pattern type to its base type via transmute.
-            let inner: u32 = unsafe { crate::mem::transmute(*self) };
-            inner.hash(state);
+    macro_rules! impl_integer {
+        { $($integer:ty),* } => {
+            $(
+              #[cfg(not(bootstrap))]
+              #[allow(ineffective_unstable_trait_impl)]
+              #[unstable(feature = "core_pattern_types", issue = "none")]
+              impl<const START: $integer, const END: $integer> Hash for crate::pattern_type!($integer is START..=END) {
+                  fn hash<H: crate::hash::Hasher>(&self, state: &mut H) {
+                      // We probably don't want this and have a as_u32() inherent method for all pattern types
+                      // SAFETY: it is always sound to convert a pattern type to its base type via transmute.
+                      let inner: $integer = unsafe { crate::mem::transmute(*self) };
+                      inner.hash(state);
+                  }
+              }
+            )*
         }
     }
+
+    impl_integer! { u8, u16, u32, u64, usize, i8, i16, i32, i64, isize }
 }
