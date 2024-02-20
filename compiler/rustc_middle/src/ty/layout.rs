@@ -326,6 +326,11 @@ impl<'tcx> SizeSkeleton<'tcx> {
     ) -> Result<SizeSkeleton<'tcx>, &'tcx LayoutError<'tcx>> {
         debug_assert!(!ty.has_non_region_infer());
 
+        let ty = match *ty.kind() {
+            ty::Pat(inner_ty, pat) if matches!(*pat, ty::PatternKind::Range { .. }) => inner_ty,
+            _ => ty,
+        };
+
         // First try computing a static layout.
         let err = match tcx.layout_of(param_env.and(ty)) {
             Ok(layout) => {
