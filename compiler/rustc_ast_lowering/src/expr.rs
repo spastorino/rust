@@ -230,6 +230,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     },
                 ),
                 ExprKind::Await(expr, await_kw_span) => self.lower_expr_await(*await_kw_span, expr),
+                ExprKind::Use(expr, use_kw_span) => self.lower_expr_use(*use_kw_span, expr),
                 ExprKind::Closure(box Closure {
                     binder,
                     capture_clause,
@@ -1027,6 +1028,18 @@ impl<'hir> LoweringContext<'_, 'hir> {
             arena_vec![self; awaitee_arm],
             hir::MatchSource::AwaitDesugar,
         )
+    }
+
+    /// Desugar `<expr>.use` into:
+    /// ```ignore (pseudo-rust)
+    /// <expr>.clone()
+    /// ```
+    fn lower_expr_use(&mut self, use_kw_span: Span, expr: &Expr) -> hir::ExprKind<'hir> {
+        let span = self.mark_span_with_reason(DesugaringKind::Use, use_kw_span, None);
+        let expr = self.lower_expr(expr);
+        let path_segment = self.make_lang_item_path_segment(hir::LangItem::CloneFn, span, None);
+
+        hir::ExprKind::MethodCall(path_segment, expr, &[], span)
     }
 
     fn lower_expr_closure(

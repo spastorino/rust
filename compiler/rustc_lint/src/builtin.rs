@@ -1878,7 +1878,7 @@ impl KeywordIdents {
             // an identifier.
             kw::Dyn if !under_macro => (KEYWORD_IDENTS_2018, Edition::Edition2018),
 
-            kw::Gen => (KEYWORD_IDENTS_2024, Edition::Edition2024),
+            kw::Gen | kw::Use => (KEYWORD_IDENTS_2024, Edition::Edition2024),
 
             _ => return,
         };

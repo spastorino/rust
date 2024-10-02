@@ -709,6 +709,24 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         })
     }
 
+    fn make_lang_item_path_segment(
+        &mut self,
+        lang_item: hir::LangItem,
+        span: Span,
+        args: Option<&'hir hir::GenericArgs<'hir>>,
+    ) -> &'hir hir::PathSegment<'hir> {
+        let def_id = self.tcx.require_lang_item(lang_item, Some(span));
+        let def_kind = self.tcx.def_kind(def_id);
+        let res = Res::Def(def_kind, def_id);
+        self.arena.alloc(hir::PathSegment {
+            ident: Ident::new(lang_item.name(), span),
+            hir_id: self.next_id(),
+            res,
+            args,
+            infer_args: args.is_none(),
+        })
+    }
+
     /// Reuses the span but adds information like the kind of the desugaring and features that are
     /// allowed inside this span.
     fn mark_span_with_reason(

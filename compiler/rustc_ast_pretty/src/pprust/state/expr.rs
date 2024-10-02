@@ -553,6 +553,10 @@ impl<'a> State<'a> {
                 self.print_expr_maybe_paren(expr, parser::PREC_UNAMBIGUOUS, fixup);
                 self.word(".await");
             }
+            ast::ExprKind::Use(expr, _) => {
+                self.print_expr_maybe_paren(expr, parser::PREC_UNAMBIGUOUS, fixup);
+                self.word(".use");
+            }
             ast::ExprKind::Assign(lhs, rhs, _) => {
                 let prec = AssocOp::Assign.precedence() as i8;
                 self.print_expr_maybe_paren(lhs, prec + 1, fixup.leftmost_subexpression());

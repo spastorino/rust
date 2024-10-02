@@ -818,6 +818,7 @@ impl<'a> Parser<'a> {
                 ExprKind::MethodCall(_) => "a method call",
                 ExprKind::Call(_, _) => "a function call",
                 ExprKind::Await(_, _) => "`.await`",
+                ExprKind::Use(_, _) => "`.use`",
                 ExprKind::Match(_, _, MatchKind::Postfix) => "a postfix match",
                 ExprKind::Err(_) => return Ok(with_postfix),
                 _ => unreachable!("parse_dot_or_call_expr_with_ shouldn't produce this"),
@@ -1337,6 +1338,10 @@ impl<'a> Parser<'a> {
             return Ok(self.mk_await_expr(self_arg, lo));
         }
 
+        if self.token.uninterpolated_span().at_least_rust_2024() && self.eat_keyword(kw::Use) {
+            return Ok(self.mk_use_expr(self_arg, lo));
+        }
+
         // Post-fix match
         if self.eat_keyword(kw::Match) {
             let match_span = self.prev_token.span;
@@ -1514,6 +1519,9 @@ impl<'a> Parser<'a> {
                         this.parse_expr_closure()
                     }
                 } else if this.eat_keyword_noexpect(kw::Await) {
+                    this.recover_incorrect_await_syntax(lo, this.prev_token.span)
+                } else if this.eat_keyword_noexpect(kw::Use) {
+                    // FIXME recover from use
                     this.recover_incorrect_await_syntax(lo, this.prev_token.span)
                 } else {
                     this.parse_expr_lit()
@@ -3856,6 +3864,14 @@ impl<'a> Parser<'a> {
         await_expr
     }
 
+    fn mk_use_expr(&mut self, self_arg: P<Expr>, lo: Span) -> P<Expr> {
+        let span = lo.to(self.prev_token.span);
+        let use_expr = self.mk_expr(span, ExprKind::Use(self_arg, self.prev_token.span));
+        // FIXME: properly recover from use
+        self.recover_from_await_method_call();
+        use_expr
+    }
+
     pub(crate) fn mk_expr_with_attrs(&self, span: Span, kind: ExprKind, attrs: AttrVec) -> P<Expr> {
         P(Expr { kind, span, attrs, id: DUMMY_NODE_ID, tokens: None })
     }
@@ -4004,6 +4020,7 @@ impl MutVisitor for CondChecker<'_> {
             }
             ExprKind::Unary(_, _)
             | ExprKind::Await(_, _)
+            | ExprKind::Use(_, _)
             | ExprKind::AssignOp(_, _, _)
             | ExprKind::Range(_, _, _)
             | ExprKind::Try(_)
