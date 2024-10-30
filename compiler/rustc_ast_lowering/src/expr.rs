@@ -230,7 +230,18 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     },
                 ),
                 ExprKind::Await(expr, await_kw_span) => self.lower_expr_await(*await_kw_span, expr),
-                ExprKind::Use(expr, use_kw_span) => self.lower_expr_use(*use_kw_span, expr),
+                ExprKind::Use(expr, use_kw_span) => {
+                    if !self.tcx.features().ergonomic_clones() {
+                        rustc_session::parse::feature_err(
+                            &self.tcx.sess,
+                            sym::ergonomic_clones,
+                            *use_kw_span,
+                            fluent_generated::ast_lowering_ergonomic_clones,
+                        )
+                        .emit();
+                    }
+                    self.lower_expr_use(*use_kw_span, expr)
+                }
                 ExprKind::Closure(box Closure {
                     binder,
                     capture_clause,

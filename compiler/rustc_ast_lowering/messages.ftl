@@ -60,6 +60,8 @@ ast_lowering_coroutine_too_many_parameters =
 ast_lowering_does_not_support_modifiers =
     the `{$class_name}` register class does not support template modifiers
 
+ast_lowering_ergonomic_clones = ergonomic clones is experimental
+
 ast_lowering_extra_double_dot =
     `..` can only be used once per {$ctx} pattern
     .label = can only be used once per {$ctx} pattern

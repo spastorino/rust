@@ -1338,7 +1338,7 @@ impl<'a> Parser<'a> {
             return Ok(self.mk_await_expr(self_arg, lo));
         }
 
-        if self.token.uninterpolated_span().at_least_rust_2024() && self.eat_keyword(kw::Use) {
+        if self.eat_keyword(kw::Use) {
             return Ok(self.mk_use_expr(self_arg, lo));
         }
 
