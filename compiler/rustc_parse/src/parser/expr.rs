@@ -1440,6 +1440,7 @@ impl<'a> Parser<'a> {
             } else if this.check_path() {
                 this.parse_expr_path_start()
             } else if this.check_keyword(kw::Move)
+                || this.check_keyword(kw::Use)
                 || this.check_keyword(kw::Static)
                 || this.check_const_closure()
             {
@@ -2432,6 +2433,16 @@ impl<'a> Parser<'a> {
                     .create_err(errors::AsyncMoveOrderIncorrect { span: move_async_span }))
             } else {
                 Ok(CaptureBy::Value { move_kw: move_kw_span })
+            }
+        } else if self.eat_keyword(kw::Use) {
+            let use_kw_span = self.prev_token.span;
+            // Check for `use async` and recover
+            if self.check_keyword(kw::Async) {
+                let use_async_span = self.token.span.with_lo(self.prev_token.span.data().lo);
+                // FIXME this should be AsyncUseOrderIncorrect
+                Err(self.dcx().create_err(errors::AsyncMoveOrderIncorrect { span: use_async_span }))
+            } else {
+                Ok(CaptureBy::Use { use_kw: use_kw_span })
             }
         } else {
             Ok(CaptureBy::Ref)

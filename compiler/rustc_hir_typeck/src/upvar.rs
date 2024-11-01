@@ -667,7 +667,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                 let (place, capture_kind) = match capture_clause {
                     hir::CaptureBy::Value { .. } => adjust_for_move_closure(place, capture_kind),
-                    hir::CaptureBy::Ref => adjust_for_non_move_closure(place, capture_kind),
+                    hir::CaptureBy::Use { .. } | hir::CaptureBy::Ref => {
+                        adjust_for_non_move_closure(place, capture_kind)
+                    }
                 };
 
                 // This restriction needs to be applied after we have handled adjustments for `move`
@@ -1161,7 +1163,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let ty = match closure_clause {
             hir::CaptureBy::Value { .. } => ty, // For move closure the capture kind should be by value
-            hir::CaptureBy::Ref => {
+            hir::CaptureBy::Ref | hir::CaptureBy::Use { .. } => {
                 // For non move closure the capture kind is the max capture kind of all captures
                 // according to the ordering ImmBorrow < UniqueImmBorrow < MutBorrow < ByValue
                 let mut max_capture_info = root_var_min_capture_list.first().unwrap().info;
@@ -1288,7 +1290,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         .insert(UpvarMigrationInfo::CapturingNothing { use_span: upvar.span });
                     return Some(diagnostics_info);
                 }
-                hir::CaptureBy::Ref => {}
+                hir::CaptureBy::Ref | hir::CaptureBy::Use { .. } => {}
             }
 
             return None;
@@ -1689,7 +1691,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             hir::CaptureBy::Value { .. } if !place.deref_tys().any(Ty::is_ref) => {
                 ty::UpvarCapture::ByValue
             }
-            hir::CaptureBy::Value { .. } | hir::CaptureBy::Ref => {
+            hir::CaptureBy::Value { .. } | hir::CaptureBy::Use { .. } | hir::CaptureBy::Ref => {
                 ty::UpvarCapture::ByRef(BorrowKind::Immutable)
             }
         }
