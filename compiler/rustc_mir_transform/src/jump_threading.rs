@@ -439,7 +439,7 @@ impl<'a, 'tcx> TOFinder<'a, 'tcx> {
                 self.process_constant(bb, lhs, constant, state);
             }
             // Transfer the conditions on the copied rhs.
-            Operand::Move(rhs) | Operand::Copy(rhs) => {
+            Operand::Move(rhs) | Operand::Copy(rhs) | Operand::Use(rhs) => {
                 let Some(rhs) = self.map.find(rhs.as_ref()) else { return };
                 state.insert_place_idx(rhs, lhs, &self.map);
             }

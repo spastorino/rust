@@ -353,7 +353,7 @@ impl<'tcx> Operand<'tcx> {
     pub fn to_copy(&self) -> Self {
         match *self {
             Operand::Copy(_) | Operand::Constant(_) => self.clone(),
-            Operand::Move(place) => Operand::Copy(place),
+            Operand::Move(place) | Operand::Use(place) => Operand::Copy(place),
         }
     }
 
@@ -361,7 +361,7 @@ impl<'tcx> Operand<'tcx> {
     /// constant.
     pub fn place(&self) -> Option<Place<'tcx>> {
         match self {
-            Operand::Copy(place) | Operand::Move(place) => Some(*place),
+            Operand::Copy(place) | Operand::Move(place) | Operand::Use(place) => Some(*place),
             Operand::Constant(_) => None,
         }
     }
@@ -371,7 +371,7 @@ impl<'tcx> Operand<'tcx> {
     pub fn constant(&self) -> Option<&ConstOperand<'tcx>> {
         match self {
             Operand::Constant(x) => Some(&**x),
-            Operand::Copy(_) | Operand::Move(_) => None,
+            Operand::Copy(_) | Operand::Move(_) | Operand::Use(_) => None,
         }
     }
 

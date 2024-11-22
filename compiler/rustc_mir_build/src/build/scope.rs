@@ -766,6 +766,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             .rev()
             .filter_map(|arg| match &arg.node {
                 Operand::Copy(_) => bug!("copy op in tail call args"),
+                Operand::Use(_) => bug!("use op in tail call args"),
                 Operand::Move(place) => {
                     let local =
                         place.as_local().unwrap_or_else(|| bug!("projection in tail call args"));
@@ -1194,7 +1195,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
         // look for moves of a local variable, like `MOVE(_X)`
         let locals_moved = operands.iter().flat_map(|operand| match operand.node {
-            Operand::Copy(_) | Operand::Constant(_) => None,
+            Operand::Copy(_) | Operand::Use(_) | Operand::Constant(_) => None,
             Operand::Move(place) => place.as_local(),
         });
 

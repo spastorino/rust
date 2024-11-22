@@ -265,6 +265,7 @@ fn remap_mir_for_const_eval_select<'tcx>(
                             (Operand::Move, local.into())
                         }
                         Operand::Move(place) => (Operand::Move, place),
+                        Operand::Use(place) => (Operand::Use, place),
                         Operand::Copy(place) => (Operand::Copy, place),
                     };
                 let place_elems = place.projection;

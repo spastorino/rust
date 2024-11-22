@@ -1272,6 +1272,12 @@ pub enum Operand<'tcx> {
     /// [UCG#188]: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
     Move(Place<'tcx>),
 
+    /// Creates a value by doing a cheap clone of the given place.
+    ///
+    /// Before drop elaboration, the type of the place must be `Use`. After drop elaboration there
+    /// is no such requirement.
+    Use(Place<'tcx>),
+
     /// Constants are already semantically values, and remain unchanged.
     Constant(Box<ConstOperand<'tcx>>),
 }

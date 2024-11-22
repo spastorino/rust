@@ -649,7 +649,7 @@ impl<'tcx> Body<'tcx> {
                 let bits = eval_mono_const(constant)?;
                 return Some((bits, targets));
             }
-            Operand::Move(place) | Operand::Copy(place) => place,
+            Operand::Move(place) | Operand::Copy(place) | Operand::Use(place) => place,
         };
 
         // MIR for `if false` actually looks like this:

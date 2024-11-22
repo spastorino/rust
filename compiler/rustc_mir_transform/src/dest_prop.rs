@@ -685,7 +685,7 @@ impl WriteInfo {
             // it is not possible to set this off with current MIR. Once we have that ability, a
             // regression test should be added.
             Operand::Move(p) => self.add_place(*p),
-            Operand::Copy(_) | Operand::Constant(_) => (),
+            Operand::Copy(_) | Operand::Use(_) | Operand::Constant(_) => (),
         }
     }
 

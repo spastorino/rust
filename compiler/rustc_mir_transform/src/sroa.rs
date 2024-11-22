@@ -418,6 +418,7 @@ impl<'tcx, 'll> MutVisitor<'tcx> for ReplacementVisitor<'tcx, 'll> {
             StatementKind::Assign(box (lhs, Rvalue::Use(ref op))) => {
                 let (rplace, copy) = match *op {
                     Operand::Copy(rplace) => (rplace, true),
+                    Operand::Use(rplace) => (rplace, false),
                     Operand::Move(rplace) => (rplace, false),
                     Operand::Constant(_) => bug!(),
                 };

@@ -640,6 +640,7 @@ pub enum AggregateKind {
 pub enum Operand {
     Copy(Place),
     Move(Place),
+    Use(Place),
     Constant(ConstOperand),
 }
 
@@ -994,7 +995,7 @@ impl Operand {
     /// Errors indicate a malformed operand or incompatible locals list.
     pub fn ty(&self, locals: &[LocalDecl]) -> Result<Ty, Error> {
         match self {
-            Operand::Copy(place) | Operand::Move(place) => place.ty(locals),
+            Operand::Copy(place) | Operand::Move(place) | Operand::Use(place) => place.ty(locals),
             Operand::Constant(c) => Ok(c.ty()),
         }
     }

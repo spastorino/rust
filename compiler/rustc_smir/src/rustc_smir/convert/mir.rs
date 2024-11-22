@@ -326,6 +326,7 @@ impl<'tcx> Stable<'tcx> for mir::Operand<'tcx> {
         match self {
             Copy(place) => stable_mir::mir::Operand::Copy(place.stable(tables)),
             Move(place) => stable_mir::mir::Operand::Move(place.stable(tables)),
+            Use(place) => stable_mir::mir::Operand::Use(place.stable(tables)),
             Constant(c) => stable_mir::mir::Operand::Constant(c.stable(tables)),
         }
     }

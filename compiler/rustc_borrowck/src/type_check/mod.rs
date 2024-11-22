@@ -731,7 +731,7 @@ impl<'a, 'b, 'tcx> TypeVerifier<'a, 'b, 'tcx> {
             PlaceContext::MutatingUse(_) => ty::Invariant,
             PlaceContext::NonUse(StorageDead | StorageLive | VarDebugInfo) => ty::Invariant,
             PlaceContext::NonMutatingUse(
-                Inspect | Copy | Move | PlaceMention | SharedBorrow | FakeBorrow | RawBorrow
+                Inspect | Copy | Move | Use | PlaceMention | SharedBorrow | FakeBorrow | RawBorrow
                 | Projection,
             ) => ty::Covariant,
             PlaceContext::NonUse(AscribeUserTy(variance)) => variance,
@@ -1860,7 +1860,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                 // element, so we require the `Copy` trait.
                 if len.try_to_target_usize(tcx).is_none_or(|len| len > 1) {
                     match operand {
-                        Operand::Copy(..) | Operand::Constant(..) => {
+                        Operand::Copy(..) | Operand::Use(..) | Operand::Constant(..) => {
                             // These are always okay: direct use of a const, or a value that can
                             // evidently be copied.
                         }

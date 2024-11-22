@@ -205,7 +205,9 @@ impl<'a, 'b, 'tcx, Bx: BuilderMethods<'b, 'tcx>> Visitor<'tcx> for LocalAnalyzer
             | PlaceContext::MutatingUse(MutatingUseContext::Retag) => {}
 
             PlaceContext::NonMutatingUse(
-                NonMutatingUseContext::Copy | NonMutatingUseContext::Move,
+                NonMutatingUseContext::Copy
+                | NonMutatingUseContext::Move
+                | NonMutatingUseContext::Use,
             ) => match &mut self.locals[local] {
                 LocalKind::ZST => {}
                 LocalKind::Memory => {}

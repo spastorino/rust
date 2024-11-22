@@ -226,7 +226,9 @@ impl<'tcx> Operand<'tcx> {
         D: HasLocalDecls<'tcx>,
     {
         match self {
-            &Operand::Copy(ref l) | &Operand::Move(ref l) => l.ty(local_decls, tcx).ty,
+            &Operand::Copy(ref l) | &Operand::Move(ref l) | &Operand::Use(ref l) => {
+                l.ty(local_decls, tcx).ty
+            }
             Operand::Constant(c) => c.const_.ty(),
         }
     }
@@ -236,7 +238,7 @@ impl<'tcx> Operand<'tcx> {
         D: HasLocalDecls<'tcx>,
     {
         match self {
-            &Operand::Copy(ref l) | &Operand::Move(ref l) => {
+            &Operand::Copy(ref l) | &Operand::Move(ref l) | &Operand::Use(ref l) => {
                 local_decls.local_decls()[l.local].source_info.span
             }
             Operand::Constant(c) => c.span,

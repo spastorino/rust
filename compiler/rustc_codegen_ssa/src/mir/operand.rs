@@ -636,9 +636,9 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         debug!("codegen_operand(operand={:?})", operand);
 
         match *operand {
-            mir::Operand::Copy(ref place) | mir::Operand::Move(ref place) => {
-                self.codegen_consume(bx, place.as_ref())
-            }
+            mir::Operand::Copy(ref place)
+            | mir::Operand::Move(ref place)
+            | mir::Operand::Use(ref place) => self.codegen_consume(bx, place.as_ref()),
 
             mir::Operand::Constant(ref constant) => {
                 let constant_ty = self.monomorphize(constant.ty());

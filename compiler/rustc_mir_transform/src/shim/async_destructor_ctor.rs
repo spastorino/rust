@@ -406,7 +406,7 @@ impl<'tcx> AsyncDestructorCtorShimBuilder<'tcx> {
         if let Some(top_cleanup_bb) = &mut self.top_cleanup_bb {
             let source_info = self.source_info;
             match &operand {
-                Operand::Copy(_) | Operand::Constant(_) => {
+                Operand::Copy(_) | Operand::Use(_) | Operand::Constant(_) => {
                     *top_cleanup_bb = self.bbs.push(BasicBlockData {
                         statements: Vec::new(),
                         terminator: Some(Terminator {

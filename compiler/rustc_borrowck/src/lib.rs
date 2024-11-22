@@ -1387,7 +1387,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, '_, 'tcx> {
         // captures of a closure are copied/moved directly
         // when generating MIR.
         match *operand {
-            Operand::Move(place) | Operand::Copy(place) => {
+            Operand::Move(place) | Operand::Copy(place) | Operand::Use(place) => {
                 match place.as_local() {
                     Some(local) if !self.body.local_decls[local].is_user_variable() => {
                         if self.body.local_decls[local].ty.is_mutable_ptr() {
@@ -1451,7 +1451,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, '_, 'tcx> {
         state: &BorrowckDomain<'a, 'tcx>,
     ) {
         match *operand {
-            Operand::Copy(place) => {
+            Operand::Copy(place) | Operand::Use(place) => {
                 // copy of place: check if this is "copy of frozen path"
                 // (FIXME: see check_loans.rs)
                 self.access_place(

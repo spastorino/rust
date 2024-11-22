@@ -53,6 +53,10 @@ pub enum UpvarCapture {
     /// depending on inference.
     ByValue,
 
+    /// Upvar is captured by `.use`. This is always true when the
+    /// closure is labeled `use`.
+    ByUse,
+
     /// Upvar is captured by reference.
     ByRef(BorrowKind),
 }
@@ -181,6 +185,8 @@ impl<'tcx> CapturedPlace<'tcx> {
     pub fn is_by_ref(&self) -> bool {
         match self.info.capture_kind {
             ty::UpvarCapture::ByValue => false,
+            // TODO: check is_by_ref uses to see what to do with ByUse
+            ty::UpvarCapture::ByUse => false,
             ty::UpvarCapture::ByRef(..) => true,
         }
     }

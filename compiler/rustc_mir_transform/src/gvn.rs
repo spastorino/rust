@@ -820,7 +820,9 @@ impl<'body, 'tcx> VnState<'body, 'tcx> {
     ) -> Option<VnIndex> {
         match *operand {
             Operand::Constant(ref constant) => self.insert_constant(constant.const_),
-            Operand::Copy(ref mut place) | Operand::Move(ref mut place) => {
+            Operand::Copy(ref mut place)
+            | Operand::Move(ref mut place)
+            | Operand::Use(ref mut place) => {
                 let value = self.simplify_place_value(place, location)?;
                 if let Some(const_) = self.try_as_constant(value) {
                     *operand = Operand::Constant(Box::new(const_));

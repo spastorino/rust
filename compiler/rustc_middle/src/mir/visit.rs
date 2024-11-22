@@ -799,6 +799,13 @@ macro_rules! make_mir_visitor {
                             location
                         );
                     }
+                    Operand::Use(place) => {
+                        self.visit_place(
+                            place,
+                            PlaceContext::NonMutatingUse(NonMutatingUseContext::Use),
+                            location
+                        );
+                    }
                     Operand::Constant(constant) => {
                         self.visit_const_operand(constant, location);
                     }
@@ -1294,6 +1301,8 @@ pub enum NonMutatingUseContext {
     Copy,
     /// Consumed as part of an operand.
     Move,
+    /// Consumed as part of an operand.
+    Use,
     /// Shared borrow.
     SharedBorrow,
     /// A fake borrow.

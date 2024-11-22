@@ -354,7 +354,9 @@ impl<'tcx> Validator<'_, 'tcx> {
 
     fn validate_operand(&mut self, operand: &Operand<'tcx>) -> Result<(), Unpromotable> {
         match operand {
-            Operand::Copy(place) | Operand::Move(place) => self.validate_place(place.as_ref()),
+            Operand::Copy(place) | Operand::Move(place) | Operand::Use(place) => {
+                self.validate_place(place.as_ref())
+            }
 
             // The qualifs for a constant (e.g. `HasMutInterior`) are checked in
             // `validate_rvalue` upon access.

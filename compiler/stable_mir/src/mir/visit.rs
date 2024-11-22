@@ -352,7 +352,7 @@ pub trait MirVisitor {
 
     fn super_operand(&mut self, operand: &Operand, location: Location) {
         match operand {
-            Operand::Copy(place) | Operand::Move(place) => {
+            Operand::Copy(place) | Operand::Move(place) | Operand::Use(place) => {
                 self.visit_place(place, PlaceContext::NON_MUTATING, location)
             }
             Operand::Constant(constant) => {

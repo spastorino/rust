@@ -1236,6 +1236,7 @@ impl<'tcx> Debug for Operand<'tcx> {
         match *self {
             Constant(ref a) => write!(fmt, "{a:?}"),
             Copy(ref place) => write!(fmt, "copy {place:?}"),
+            Use(ref place) => write!(fmt, "use {place:?}"),
             Move(ref place) => write!(fmt, "move {place:?}"),
         }
     }

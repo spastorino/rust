@@ -48,6 +48,21 @@ pub trait Delegate<'tcx> {
     /// the id of the binding in the pattern `pat`.
     fn consume(&mut self, place_with_id: &PlaceWithHirId<'tcx>, diag_expr_id: HirId);
 
+    /// The value found at `place` is moved, depending
+    /// on `mode`. Where `diag_expr_id` is the id used for diagnostics for `place`.
+    ///
+    /// Use of a `Copy` type in a ByValue context is considered a use
+    /// by `ImmBorrow` and `borrow` is called instead. This is because
+    /// a shared borrow is the "minimum access" that would be needed
+    /// to perform a copy.
+    ///
+    ///
+    /// The parameter `diag_expr_id` indicates the HIR id that ought to be used for
+    /// diagnostics. Around pattern matching such as `let pat = expr`, the diagnostic
+    /// id will be the id of the expression `expr` but the place itself will have
+    /// the id of the binding in the pattern `pat`.
+    fn byuse(&mut self, place_with_id: &PlaceWithHirId<'tcx>, diag_expr_id: HirId);
+
     /// The value found at `place` is being borrowed with kind `bk`.
     /// `diag_expr_id` is the id used for diagnostics (see `consume` for more details).
     fn borrow(
@@ -90,6 +105,10 @@ pub trait Delegate<'tcx> {
 impl<'tcx, D: Delegate<'tcx>> Delegate<'tcx> for &mut D {
     fn consume(&mut self, place_with_id: &PlaceWithHirId<'tcx>, diag_expr_id: HirId) {
         (**self).consume(place_with_id, diag_expr_id)
+    }
+
+    fn byuse(&mut self, place_with_id: &PlaceWithHirId<'tcx>, diag_expr_id: HirId) {
+        (**self).byuse(place_with_id, diag_expr_id)
     }
 
     fn borrow(
@@ -292,7 +311,19 @@ impl<'tcx, Cx: TypeInformationCtxt<'tcx>, D: Delegate<'tcx>> ExprUseVisitor<'tcx
         if self.cx.type_is_copy_modulo_regions(place_with_id.place.ty()) {
             self.delegate.borrow_mut().copy(place_with_id, diag_expr_id);
         } else {
+            // FIXME maybe we need to split between use and move
             self.delegate.borrow_mut().consume(place_with_id, diag_expr_id);
+        }
+    }
+
+    fn use_or_copy(&self, place_with_id: &PlaceWithHirId<'tcx>, diag_expr_id: HirId) {
+        debug!("delegate_use(place_with_id={:?})", place_with_id);
+
+        if self.cx.type_is_copy_modulo_regions(place_with_id.place.ty()) {
+            self.delegate.borrow_mut().copy(place_with_id, diag_expr_id);
+        } else {
+            // FIXME maybe we need to split between use and move
+            self.delegate.borrow_mut().byuse(place_with_id, diag_expr_id);
         }
     }
 
@@ -1065,6 +1096,9 @@ impl<'tcx, Cx: TypeInformationCtxt<'tcx>, D: Delegate<'tcx>> ExprUseVisitor<'tcx
                     match capture_info.capture_kind {
                         ty::UpvarCapture::ByValue => {
                             self.consume_or_copy(&place_with_id, place_with_id.hir_id);
+                        }
+                        ty::UpvarCapture::ByUse => {
+                            self.use_or_copy(&place_with_id, place_with_id.hir_id);
                         }
                         ty::UpvarCapture::ByRef(upvar_borrow) => {
                             self.delegate.borrow_mut().borrow(

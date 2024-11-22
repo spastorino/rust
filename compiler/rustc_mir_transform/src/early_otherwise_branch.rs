@@ -121,6 +121,7 @@ impl<'tcx> crate::MirPass<'tcx> for EarlyOtherwiseBranch {
             let parent_op = match parent_op {
                 Operand::Move(x) => Operand::Copy(*x),
                 Operand::Copy(x) => Operand::Copy(*x),
+                Operand::Use(x) => Operand::Copy(*x),
                 Operand::Constant(x) => Operand::Constant(x.clone()),
             };
             let parent_ty = parent_op.ty(body.local_decls(), tcx);

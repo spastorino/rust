@@ -283,7 +283,9 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
     fn eval_operand(&mut self, op: &Operand<'tcx>) -> Option<ImmTy<'tcx>> {
         match *op {
             Operand::Constant(ref c) => self.eval_constant(c),
-            Operand::Move(place) | Operand::Copy(place) => self.eval_place(place),
+            Operand::Move(place) | Operand::Copy(place) | Operand::Use(place) => {
+                self.eval_place(place)
+            }
         }
     }
 
@@ -954,6 +956,7 @@ impl<'tcx> Visitor<'tcx> for CanConstProp {
             // Reading constants is allowed an arbitrary number of times
             NonMutatingUse(NonMutatingUseContext::Copy)
             | NonMutatingUse(NonMutatingUseContext::Move)
+            | NonMutatingUse(NonMutatingUseContext::Use)
             | NonMutatingUse(NonMutatingUseContext::Inspect)
             | NonMutatingUse(NonMutatingUseContext::PlaceMention)
             | NonUse(_) => {}

@@ -244,6 +244,15 @@ impl<'a, 'tcx> LoanInvalidationsGenerator<'a, 'tcx> {
                     LocalMutationIsAllowed::Yes,
                 );
             }
+            Operand::Use(place) => {
+                self.access_place(
+                    location,
+                    place,
+                    // FIXME
+                    (Deep, Read(ReadKind::Borrow(BorrowKind::Shared))),
+                    LocalMutationIsAllowed::Yes,
+                );
+            }
             Operand::Constant(_) => {}
         }
     }

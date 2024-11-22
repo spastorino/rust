@@ -377,6 +377,12 @@ impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
         op: &mir::Operand<'tcx>,
     ) -> InterpResult<'tcx, FnArg<'tcx, M::Provenance>> {
         interp_ok(match op {
+            // FIXME properly handle Use
+            mir::Operand::Use(_) => {
+                // Make a regular copy.
+                let op = self.eval_operand(op, None)?;
+                FnArg::Copy(op)
+            }
             mir::Operand::Copy(_) | mir::Operand::Constant(_) => {
                 // Make a regular copy.
                 let op = self.eval_operand(op, None)?;

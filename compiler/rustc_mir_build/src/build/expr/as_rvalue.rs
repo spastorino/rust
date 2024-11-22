@@ -433,6 +433,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             // by reference captures use as_operand
                             Some(Category::Place) => {
                                 let place = unpack!(block = this.as_place(block, upvar));
+                                // FIXME how to return Operand::Use?
                                 this.consume_by_copy_or_move(place)
                             }
                             _ => {

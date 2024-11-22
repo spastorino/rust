@@ -215,7 +215,7 @@ impl<'a, 'tcx> ConstAnalysis<'a, 'tcx> {
             Operand::Constant(box constant) => {
                 ValueOrPlace::Value(self.handle_constant(constant, state))
             }
-            Operand::Copy(place) | Operand::Move(place) => {
+            Operand::Copy(place) | Operand::Move(place) | Operand::Use(place) => {
                 // On move, we would ideally flood the place with bottom. But with the current
                 // framework this is not possible (similar to `InterpCx::eval_operand`).
                 self.map.find(place.as_ref()).map(ValueOrPlace::Place).unwrap_or(ValueOrPlace::TOP)
@@ -549,7 +549,7 @@ impl<'a, 'tcx> ConstAnalysis<'a, 'tcx> {
         operand: &Operand<'tcx>,
     ) {
         match operand {
-            Operand::Copy(rhs) | Operand::Move(rhs) => {
+            Operand::Copy(rhs) | Operand::Move(rhs) | Operand::Use(rhs) => {
                 if let Some(rhs) = self.map.find(rhs.as_ref()) {
                     state.insert_place_idx(place, rhs, &self.map);
                 } else if rhs.projection.first() == Some(&PlaceElem::Deref)
@@ -1033,7 +1033,7 @@ impl<'tcx> MutVisitor<'tcx> for Patch<'tcx> {
 
     fn visit_operand(&mut self, operand: &mut Operand<'tcx>, location: Location) {
         match operand {
-            Operand::Copy(place) | Operand::Move(place) => {
+            Operand::Copy(place) | Operand::Move(place) | Operand::Use(place) => {
                 if let Some(value) = self.before_effect.get(&(location, *place)) {
                     *operand = self.make_operand(*value);
                 } else if !place.projection.is_empty() {

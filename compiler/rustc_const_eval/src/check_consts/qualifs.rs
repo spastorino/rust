@@ -333,7 +333,7 @@ where
     F: FnMut(Local) -> bool,
 {
     let constant = match operand {
-        Operand::Copy(place) | Operand::Move(place) => {
+        Operand::Copy(place) | Operand::Move(place) | Operand::Use(place) => {
             return in_place::<Q, _>(cx, in_local, place.as_ref());
         }
 
