@@ -151,7 +151,7 @@ fn is_ancestor_or_same_capture(
 /// Note there will be at most one ancestor for any given Place.
 ///
 /// Returns None, when the ancestor is not found.
-fn find_capture_matching_projections<'a, 'tcx>(
+pub(crate) fn find_capture_matching_projections<'a, 'tcx>(
     upvars: &'a CaptureMap<'tcx>,
     var_hir_id: LocalVarId,
     projections: &[PlaceElem<'tcx>],

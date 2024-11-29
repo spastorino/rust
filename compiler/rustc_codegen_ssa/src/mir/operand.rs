@@ -628,6 +628,31 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         bx.load_operand(place)
     }
 
+    pub fn codegen_use(
+        &mut self,
+        bx: &mut Bx,
+        place_ref: mir::PlaceRef<'tcx>,
+    ) -> OperandRef<'tcx, Bx::Value> {
+        debug!("codegen_use(place_ref={:?})", place_ref);
+
+        let ty = self.monomorphized_place_ty(place_ref);
+        let layout = bx.cx().layout_of(ty);
+
+        // ZSTs don't require any actual memory access.
+        if layout.is_zst() {
+            return OperandRef::zero_sized(layout);
+        }
+
+        if let Some(o) = self.maybe_codegen_consume_direct(bx, place_ref) {
+            return o;
+        }
+
+        // for most places, to consume them we just load them
+        // out from their home
+        let place = self.codegen_place(bx, place_ref);
+        bx.load_operand(place)
+    }
+
     pub fn codegen_operand(
         &mut self,
         bx: &mut Bx,
@@ -636,9 +661,11 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         debug!("codegen_operand(operand={:?})", operand);
 
         match *operand {
-            mir::Operand::Copy(ref place)
-            | mir::Operand::Move(ref place)
-            | mir::Operand::Use(ref place) => self.codegen_consume(bx, place.as_ref()),
+            mir::Operand::Copy(ref place) | mir::Operand::Move(ref place) => {
+                self.codegen_consume(bx, place.as_ref())
+            }
+
+            mir::Operand::Use(ref place) => self.codegen_use(bx, place.as_ref()),
 
             mir::Operand::Constant(ref constant) => {
                 let constant_ty = self.monomorphize(constant.ty());

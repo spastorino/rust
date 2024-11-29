@@ -11,12 +11,12 @@ use rustc_middle::thir::*;
 use rustc_middle::ty::cast::{CastTy, mir_cast_kind};
 use rustc_middle::ty::layout::IntegerExt;
 use rustc_middle::ty::util::IntTypeExt;
-use rustc_middle::ty::{self, Ty, UpvarArgs};
+use rustc_middle::ty::{self, Ty, UpvarArgs, UpvarCapture};
 use rustc_span::source_map::Spanned;
 use rustc_span::{DUMMY_SP, Span};
 use tracing::debug;
 
-use crate::build::expr::as_place::PlaceBase;
+use crate::build::expr::as_place::{PlaceBase, find_capture_matching_projections};
 use crate::build::expr::category::{Category, RvalueFunc};
 use crate::build::{BlockAnd, BlockAndExtension, Builder, NeedsTemporary};
 
@@ -433,7 +433,25 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             // by reference captures use as_operand
                             Some(Category::Place) => {
                                 let place = unpack!(block = this.as_place(block, upvar));
-                                // FIXME how to return Operand::Use?
+
+                                match &upvar_expr.kind {
+                                    ExprKind::UpvarRef { var_hir_id, .. } => {
+                                        if let Some((_, capture)) =
+                                            find_capture_matching_projections(
+                                                &this.upvars,
+                                                *var_hir_id,
+                                                place.projection,
+                                            )
+                                        {
+                                            if capture.captured_place.info.capture_kind
+                                                == UpvarCapture::ByUse
+                                            {
+                                                return this.consume_by_copy_or_use(place);
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
                                 this.consume_by_copy_or_move(place)
                             }
                             _ => {

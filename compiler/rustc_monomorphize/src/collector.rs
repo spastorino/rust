@@ -749,6 +749,26 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirUsedCollector<'a, 'tcx> {
         self.super_rvalue(rvalue, location);
     }
 
+    fn visit_operand(&mut self, operand: &mir::Operand<'tcx>, location: Location) {
+        debug!("visiting operand {:?}", *operand);
+
+        if let mir::Operand::Use(place) = operand {
+            debug!("visiting use operand, place = {:?}", place);
+
+            let span = self.body.source_info(location).span;
+            let ty = operand.ty(self.body, self.tcx);
+            let lang_item = get_clone_lang_item();
+            let typing_env = ty::TypingEnv::fully_monomorphized();
+
+            // Remember that fn takes an &T
+            let instance =
+                Instance::resolve_for_fn_ptr(self.tcx, typing_env, lang_item.def_id, &[ty]);
+            self.used_items.push(create_fn_mono_item(self.tcx, instance, span));
+        }
+
+        self.super_operand(operand, location);
+    }
+
     /// This does not walk the MIR of the constant as that is not needed for codegen, all we need is
     /// to ensure that the constant evaluates successfully and walk the result.
     #[instrument(skip(self), level = "debug")]

@@ -6,7 +6,7 @@ use super::BackendTypes;
 use crate::mir::operand::OperandRef;
 
 pub trait IntrinsicCallBuilderMethods<'tcx>: BackendTypes {
-    /// Remember to add all intrinsics here, in `compiler/rustc_hir_analysis/src/check/mod.rs`,
+    /// Remember to add all intrinsics here, in `compiler/rustc_hir_analysis/src/check/intrinsic.rs`,
     /// and in `library/core/src/intrinsics.rs`; if you need access to any LLVM intrinsics,
     /// add them to `compiler/rustc_codegen_llvm/src/context.rs`.
     /// Returns `Err` if another instance should be called instead. This is used to invoke
