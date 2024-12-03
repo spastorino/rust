@@ -51,7 +51,7 @@ impl<'tcx> InferCtxt<'tcx> {
         let ty = self.resolve_vars_if_possible(ty);
 
         if !(param_env, ty).has_infer() {
-            return ty.is_copy_modulo_regions(self.tcx, param_env);
+            return ty.is_copy_modulo_regions(self.tcx, self.typing_env(param_env));
         }
 
         let copy_def_id = self.tcx.require_lang_item(LangItem::Use, None);

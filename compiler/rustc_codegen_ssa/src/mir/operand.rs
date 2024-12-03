@@ -643,6 +643,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             return OperandRef::zero_sized(layout);
         }
 
+        // TODO does this make sense?
         if let Some(o) = self.maybe_codegen_consume_direct(bx, place_ref) {
             return o;
         }
@@ -650,7 +651,21 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         // for most places, to consume them we just load them
         // out from their home
         let place = self.codegen_place(bx, place_ref);
-        bx.load_operand(place)
+
+        self.codegen_lang_fn_call();
+        // helper: TerminatorCodegenHelper<'tcx>,
+        // bx: &mut Bx,
+        // terminator: &mir::Terminator<'tcx>,
+        // func: &mir::Operand<'tcx>,
+        // args: &[Spanned<mir::Operand<'tcx>>],
+        // destination: mir::Place<'tcx>,
+        // target: Option<mir::BasicBlock>,
+        // unwind: mir::UnwindAction,
+        // fn_span: Span,
+        // mergeable_succ: bool,
+        // ) -> MergingSucc {
+
+        return OperandRef { val: OperandValue::Ref(llval), layout };
     }
 
     pub fn codegen_operand(

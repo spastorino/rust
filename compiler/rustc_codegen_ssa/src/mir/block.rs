@@ -13,7 +13,7 @@ use rustc_middle::ty::{self, Instance, Ty};
 use rustc_middle::{bug, span_bug};
 use rustc_session::config::OptLevel;
 use rustc_span::source_map::Spanned;
-use rustc_span::{Span, sym};
+use rustc_span::{DUMMY_SP, Span, sym};
 use rustc_target::callconv::{ArgAbi, FnAbi, PassMode, Reg};
 use tracing::{debug, info};
 
@@ -1146,234 +1146,22 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         &mut self,
         helper: TerminatorCodegenHelper<'tcx>,
         bx: &mut Bx,
-        terminator: &mir::Terminator<'tcx>,
         func: &mir::Operand<'tcx>,
         args: &[Spanned<mir::Operand<'tcx>>],
         destination: mir::Place<'tcx>,
         target: Option<mir::BasicBlock>,
-        unwind: mir::UnwindAction,
         fn_span: Span,
         mergeable_succ: bool,
     ) -> MergingSucc {
-        let source_info = terminator.source_info;
-        let span = source_info.span;
-
-        // Create the callee. This is a fn ptr or zero-sized and hence a kind of scalar.
-        let callee = self.codegen_operand(bx, func);
-
-        let (instance, mut llfn) = match *callee.layout.ty.kind() {
-            ty::FnDef(def_id, args) => (
-                Some(
-                    ty::Instance::expect_resolve(bx.tcx(), bx.typing_env(), def_id, args, fn_span)
-                        .polymorphize(bx.tcx()),
-                ),
-                None,
-            ),
-            ty::FnPtr(..) => (None, Some(callee.immediate())),
-            _ => bug!("{} is not callable", callee.layout.ty),
-        };
-
-        let def = instance.map(|i| i.def);
-
-        if let Some(
-            ty::InstanceKind::DropGlue(_, None) | ty::InstanceKind::AsyncDropGlueCtorShim(_, None),
-        ) = def
-        {
-            // Empty drop glue; a no-op.
-            let target = target.unwrap();
-            return helper.funclet_br(self, bx, target, mergeable_succ);
-        }
-
-        // FIXME(eddyb) avoid computing this if possible, when `instance` is
-        // available - right now `sig` is only needed for getting the `abi`
-        // and figuring out how many extra args were passed to a C-variadic `fn`.
-        let sig = callee.layout.ty.fn_sig(bx.tcx());
-        let abi = sig.abi();
-
-        let extra_args = &args[sig.inputs().skip_binder().len()..];
-        let extra_args = bx.tcx().mk_type_list_from_iter(extra_args.iter().map(|op_arg| {
-            let op_ty = op_arg.node.ty(self.mir, bx.tcx());
-            self.monomorphize(op_ty)
-        }));
-
-        let fn_abi = match instance {
-            Some(instance) => bx.fn_abi_of_instance(instance, extra_args),
-            None => bx.fn_abi_of_fn_ptr(sig, extra_args),
-        };
-
-        // The arguments we'll be passing. Plus one to account for outptr, if used.
-        let arg_count = fn_abi.args.len() + fn_abi.ret.is_indirect() as usize;
-
-        let instance = match def {
-            _ => instance,
-        };
-
-        let mut llargs = Vec::with_capacity(arg_count);
-        let destination = target.as_ref().map(|&target| {
-            (
-                self.make_return_dest(
-                    bx,
-                    destination,
-                    &fn_abi.ret,
-                    &mut llargs,
-                    None,
-                    Some(target),
-                ),
-                target,
-            )
-        });
-
-        // Split the rust-call tupled arguments off.
-        let (first_args, untuple) = if abi == ExternAbi::RustCall && !args.is_empty() {
-            let (tup, args) = args.split_last().unwrap();
-            (args, Some(tup))
-        } else {
-            (args, None)
-        };
-
-        let mut copied_constant_arguments = vec![];
-        'make_args: for (i, arg) in first_args.iter().enumerate() {
-            let mut op = self.codegen_operand(bx, &arg.node);
-
-            if let (0, Some(ty::InstanceKind::Virtual(_, idx))) = (i, def) {
-                match op.val {
-                    Pair(data_ptr, meta) => {
-                        // In the case of Rc<Self>, we need to explicitly pass a
-                        // *mut RcInner<Self> with a Scalar (not ScalarPair) ABI. This is a hack
-                        // that is understood elsewhere in the compiler as a method on
-                        // `dyn Trait`.
-                        // To get a `*mut RcInner<Self>`, we just keep unwrapping newtypes until
-                        // we get a value of a built-in pointer type.
-                        //
-                        // This is also relevant for `Pin<&mut Self>`, where we need to peel the
-                        // `Pin`.
-                        while !op.layout.ty.is_unsafe_ptr() && !op.layout.ty.is_ref() {
-                            let (idx, _) = op.layout.non_1zst_field(bx).expect(
-                                "not exactly one non-1-ZST field in a `DispatchFromDyn` type",
-                            );
-                            op = op.extract_field(bx, idx);
-                        }
-
-                        // Now that we have `*dyn Trait` or `&dyn Trait`, split it up into its
-                        // data pointer and vtable. Look up the method in the vtable, and pass
-                        // the data pointer as the first argument.
-                        llfn = Some(meth::VirtualIndex::from_index(idx).get_fn(
-                            bx,
-                            meta,
-                            op.layout.ty,
-                            fn_abi,
-                        ));
-                        llargs.push(data_ptr);
-                        continue 'make_args;
-                    }
-                    Ref(PlaceValue { llval: data_ptr, llextra: Some(meta), .. }) => {
-                        // by-value dynamic dispatch
-                        llfn = Some(meth::VirtualIndex::from_index(idx).get_fn(
-                            bx,
-                            meta,
-                            op.layout.ty,
-                            fn_abi,
-                        ));
-                        llargs.push(data_ptr);
-                        continue;
-                    }
-                    Immediate(_) => {
-                        // See comment above explaining why we peel these newtypes
-                        while !op.layout.ty.is_unsafe_ptr() && !op.layout.ty.is_ref() {
-                            let (idx, _) = op.layout.non_1zst_field(bx).expect(
-                                "not exactly one non-1-ZST field in a `DispatchFromDyn` type",
-                            );
-                            op = op.extract_field(bx, idx);
-                        }
-
-                        // Make sure that we've actually unwrapped the rcvr down
-                        // to a pointer or ref to `dyn* Trait`.
-                        if !op.layout.ty.builtin_deref(true).unwrap().is_dyn_star() {
-                            span_bug!(span, "can't codegen a virtual call on {:#?}", op);
-                        }
-                        let place = op.deref(bx.cx());
-                        let data_place = place.project_field(bx, 0);
-                        let meta_place = place.project_field(bx, 1);
-                        let meta = bx.load_operand(meta_place);
-                        llfn = Some(meth::VirtualIndex::from_index(idx).get_fn(
-                            bx,
-                            meta.immediate(),
-                            op.layout.ty,
-                            fn_abi,
-                        ));
-                        llargs.push(data_place.val.llval);
-                        continue;
-                    }
-                    _ => {
-                        span_bug!(span, "can't codegen a virtual call on {:#?}", op);
-                    }
-                }
-            }
-
-            // The callee needs to own the argument memory if we pass it
-            // by-ref, so make a local copy of non-immediate constants.
-            match (&arg.node, op.val) {
-                (&mir::Operand::Copy(_), Ref(PlaceValue { llextra: None, .. }))
-                | (&mir::Operand::Constant(_), Ref(PlaceValue { llextra: None, .. })) => {
-                    let tmp = PlaceRef::alloca(bx, op.layout);
-                    bx.lifetime_start(tmp.val.llval, tmp.layout.size);
-                    op.val.store(bx, tmp);
-                    op.val = Ref(tmp.val);
-                    copied_constant_arguments.push(tmp);
-                }
-                _ => {}
-            }
-
-            self.codegen_argument(bx, op, &mut llargs, &fn_abi.args[i]);
-        }
-        let num_untupled = untuple.map(|tup| {
-            self.codegen_arguments_untupled(
-                bx,
-                &tup.node,
-                &mut llargs,
-                &fn_abi.args[first_args.len()..],
-            )
-        });
-
-        let needs_location =
-            instance.is_some_and(|i| i.def.requires_caller_location(self.cx.tcx()));
-        if needs_location {
-            let mir_args = if let Some(num_untupled) = num_untupled {
-                first_args.len() + num_untupled
-            } else {
-                args.len()
-            };
-            assert_eq!(
-                fn_abi.args.len(),
-                mir_args + 1,
-                "#[track_caller] fn's must have 1 more argument in their ABI than in their MIR: {instance:?} {fn_span:?} {fn_abi:?}",
-            );
-            let location =
-                self.get_caller_location(bx, mir::SourceInfo { span: fn_span, ..source_info });
-            debug!(
-                "codegen_call_terminator({:?}): location={:?} (fn_span {:?})",
-                terminator, location, fn_span
-            );
-
-            let last_arg = fn_abi.args.last().unwrap();
-            self.codegen_argument(bx, location, &mut llargs, last_arg);
-        }
-
-        let fn_ptr = match (instance, llfn) {
-            (Some(instance), None) => bx.get_fn_addr(instance),
-            (_, Some(llfn)) => llfn,
-            _ => span_bug!(span, "no instance or llfn for call"),
-        };
-        helper.do_call(
-            self,
+        self.codegen_call_terminator(
+            helper,
             bx,
-            fn_abi,
-            fn_ptr,
-            &llargs,
+            func,
+            args,
             destination,
-            unwind,
-            &copied_constant_arguments,
-            instance,
+            target,
+            mir::UnwindAction::Unreachable,
+            fn_span,
             mergeable_succ,
         )
     }
