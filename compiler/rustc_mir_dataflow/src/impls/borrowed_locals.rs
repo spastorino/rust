@@ -122,6 +122,7 @@ where
             TerminatorKind::UnwindTerminate(_)
             | TerminatorKind::Assert { .. }
             | TerminatorKind::Call { .. }
+            | TerminatorKind::Use { .. }
             | TerminatorKind::FalseEdge { .. }
             | TerminatorKind::FalseUnwind { .. }
             | TerminatorKind::CoroutineDrop

@@ -439,6 +439,7 @@ mod helper {
                 Goto { target: ref t }
                 | Call { target: None, unwind: UnwindAction::Cleanup(ref t), .. }
                 | Call { target: Some(ref t), unwind: _, .. }
+                | Use { target: ref t, .. }
                 | Yield { resume: ref t, drop: None, .. }
                 | Drop { target: ref t, unwind: _, .. }
                 | Assert { target: ref t, unwind: _, .. }
@@ -480,6 +481,7 @@ mod helper {
                 Goto { target: ref mut t }
                 | Call { target: None, unwind: UnwindAction::Cleanup(ref mut t), .. }
                 | Call { target: Some(ref mut t), unwind: _, .. }
+                | Use { target: ref mut t, .. }
                 | Yield { resume: ref mut t, drop: None, .. }
                 | Drop { target: ref mut t, unwind: _, .. }
                 | Assert { target: ref mut t, unwind: _, .. }
@@ -511,6 +513,7 @@ impl<'tcx> TerminatorKind<'tcx> {
     pub fn unwind(&self) -> Option<&UnwindAction> {
         match *self {
             TerminatorKind::Goto { .. }
+            | TerminatorKind::Use { .. }
             | TerminatorKind::UnwindResume
             | TerminatorKind::UnwindTerminate(_)
             | TerminatorKind::Return
@@ -532,6 +535,7 @@ impl<'tcx> TerminatorKind<'tcx> {
     pub fn unwind_mut(&mut self) -> Option<&mut UnwindAction> {
         match *self {
             TerminatorKind::Goto { .. }
+            | TerminatorKind::Use { .. }
             | TerminatorKind::UnwindResume
             | TerminatorKind::UnwindTerminate(_)
             | TerminatorKind::Return
@@ -662,6 +666,12 @@ impl<'tcx> TerminatorKind<'tcx> {
             } => TerminatorEdges::AssignOnReturn {
                 return_: target.as_ref().map(slice::from_ref).unwrap_or_default(),
                 cleanup: unwind.cleanup_block(),
+                place: CallReturnPlaces::Call(destination),
+            },
+
+            Use { place: _, destination, ref target } => TerminatorEdges::AssignOnReturn {
+                return_: slice::from_ref(target),
+                cleanup: None,
                 place: CallReturnPlaces::Call(destination),
             },
 

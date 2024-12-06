@@ -927,6 +927,10 @@ impl<'tcx> Visitor<'tcx> for Checker<'_, 'tcx> {
                 span_bug!(self.span, "`Terminate` terminator outside of cleanup block")
             }
 
+            TerminatorKind::Use { .. } => {
+                // TODO handle const eval
+            }
+
             TerminatorKind::Assert { .. }
             | TerminatorKind::FalseEdge { .. }
             | TerminatorKind::FalseUnwind { .. }

@@ -197,7 +197,7 @@ impl<'tcx> Analysis<'tcx> for MaybeRequiresStorage<'_, 'tcx> {
         MaybeBorrowedLocals::transfer_function(trans).visit_terminator(terminator, loc);
 
         match &terminator.kind {
-            TerminatorKind::Call { destination, .. } => {
+            TerminatorKind::Call { destination, .. } | TerminatorKind::Use { destination, .. } => {
                 trans.gen_(destination.local);
             }
 
@@ -253,7 +253,7 @@ impl<'tcx> Analysis<'tcx> for MaybeRequiresStorage<'_, 'tcx> {
             // and after the call returns successfully, but not after a panic.
             // Since `propagate_call_unwind` doesn't exist, we have to kill the
             // destination here, and then gen it again in `call_return_effect`.
-            TerminatorKind::Call { destination, .. } => {
+            TerminatorKind::Call { destination, .. } | TerminatorKind::Use { destination, .. } => {
                 trans.kill(destination.local);
             }
 

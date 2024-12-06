@@ -779,6 +779,13 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirUsedCollector<'a, 'tcx> {
                 let callee_ty = self.monomorphize(callee_ty);
                 visit_fn_use(self.tcx, callee_ty, true, source, &mut self.used_items)
             }
+            mir::TerminatorKind::Use { ref place, .. } => {
+                let callee_ty = place.ty(self.body, tcx).ty;
+                // *Before* monomorphizing, record that we already handled this mention.
+                self.used_mentioned_items.insert(MentionedItem::Fn(callee_ty));
+                let callee_ty = self.monomorphize(callee_ty);
+                visit_fn_use(self.tcx, callee_ty, true, source, &mut self.used_items)
+            }
             mir::TerminatorKind::Drop { ref place, .. } => {
                 let ty = place.ty(self.body, self.tcx).ty;
                 // *Before* monomorphizing, record that we already handled this mention.

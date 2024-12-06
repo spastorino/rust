@@ -540,6 +540,23 @@ macro_rules! make_mir_visitor {
                         );
                     }
 
+                    TerminatorKind::Use {
+                        place,
+                        destination,
+                        target: _,
+                    } => {
+                        self.visit_place(
+                            place,
+                            PlaceContext::NonMutatingUse(NonMutatingUseContext::Use),
+                            location
+                        );
+                        self.visit_place(
+                            destination,
+                            PlaceContext::MutatingUse(MutatingUseContext::Call),
+                            location
+                        );
+                    }
+
                     TerminatorKind::TailCall {
                         func,
                         args,

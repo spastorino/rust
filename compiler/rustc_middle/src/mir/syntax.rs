@@ -764,6 +764,25 @@ pub enum TerminatorKind<'tcx> {
         fn_span: Span,
     },
 
+    /// Roughly speaking, evaluates the `func` operand and the arguments, and starts execution of
+    /// the referred to function. The operand types must match the argument types of the function.
+    /// The return place type must match the return type. The type of the `func` operand must be
+    /// callable, meaning either a function pointer, a function type, or a closure type.
+    ///
+    /// **Needs clarification**: The exact semantics of this. Current backends rely on `move`
+    /// operands not aliasing the return place. It is unclear how this is justified in MIR, see
+    /// [#71117].
+    ///
+    /// [#71117]: https://github.com/rust-lang/rust/issues/71117
+    Use {
+        /// The place value self of the value being used.
+        place: Place<'tcx>,
+        /// Where the returned value will be written
+        destination: Place<'tcx>,
+        /// Where to go after this call returns.
+        target: BasicBlock,
+    },
+
     /// Tail call.
     ///
     /// Roughly speaking this is a chimera of [`Call`] and [`Return`], with some caveats.
@@ -938,6 +957,7 @@ impl TerminatorKind<'_> {
             TerminatorKind::Unreachable => "Unreachable",
             TerminatorKind::Drop { .. } => "Drop",
             TerminatorKind::Call { .. } => "Call",
+            TerminatorKind::Use { .. } => "Use",
             TerminatorKind::TailCall { .. } => "TailCall",
             TerminatorKind::Assert { .. } => "Assert",
             TerminatorKind::Yield { .. } => "Yield",

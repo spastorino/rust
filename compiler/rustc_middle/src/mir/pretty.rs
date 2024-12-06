@@ -930,6 +930,13 @@ impl<'tcx> TerminatorKind<'tcx> {
                 }
                 write!(fmt, ")")
             }
+            Use { place, destination, .. } => {
+                write!(fmt, "{destination:?} = ")?;
+                write!(fmt, "use(")?;
+                write!(fmt, "{place:?}(")?;
+                // TODO add &T
+                write!(fmt, ")")
+            }
             TailCall { func, args, .. } => {
                 write!(fmt, "tailcall {func:?}(")?;
                 for (index, arg) in args.iter().enumerate() {
@@ -1028,6 +1035,7 @@ impl<'tcx> TerminatorKind<'tcx> {
             Call { target: None, unwind: _, .. } => vec![],
             Yield { drop: Some(_), .. } => vec!["resume".into(), "drop".into()],
             Yield { drop: None, .. } => vec!["resume".into()],
+            Use { .. } => vec!["return".into()],
             Drop { unwind: UnwindAction::Cleanup(_), .. } => vec!["return".into(), "unwind".into()],
             Drop { unwind: _, .. } => vec!["return".into()],
             Assert { unwind: UnwindAction::Cleanup(_), .. } => {

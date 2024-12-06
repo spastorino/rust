@@ -285,6 +285,7 @@ pub(crate) fn cleanup_kinds(mir: &mir::Body<'_>) -> IndexVec<mir::BasicBlock, Cl
         for (bb, data) in mir.basic_blocks.iter_enumerated() {
             match data.terminator().kind {
                 TerminatorKind::Goto { .. }
+                | TerminartorKind::Use { .. }
                 | TerminatorKind::UnwindResume
                 | TerminatorKind::UnwindTerminate(_)
                 | TerminatorKind::Return

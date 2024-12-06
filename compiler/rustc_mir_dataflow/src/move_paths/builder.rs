@@ -467,6 +467,15 @@ impl<'a, 'tcx, F: Fn(Ty<'tcx>) -> bool> MoveDataBuilder<'a, 'tcx, F> {
                     self.gather_init(destination.as_ref(), InitKind::NonPanicPathOnly);
                 }
             }
+            TerminatorKind::Use {
+                place: _,
+                destination,
+                target: _,
+            } => {
+                // place does not move so do nothing
+                self.create_move_path(destination);
+                self.gather_init(destination.as_ref(), InitKind::NonPanicPathOnly);
+            }
             TerminatorKind::TailCall { ref func, ref args, .. } => {
                 self.gather_operand(func);
                 for arg in args {

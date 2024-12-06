@@ -159,6 +159,11 @@ pub enum TerminatorKind {
         target: Option<BasicBlockIdx>,
         unwind: UnwindAction,
     },
+    Use {
+        place: Place,
+        destination: Place,
+        target: BasicBlockIdx,
+    },
     Assert {
         cond: Operand,
         expected: bool,
@@ -189,6 +194,7 @@ impl TerminatorKind {
             Goto { target: t }
             | Call { target: None, unwind: UnwindAction::Cleanup(t), .. }
             | Call { target: Some(t), unwind: _, .. }
+            | Use { target: t, .. }
             | Drop { target: t, unwind: _, .. }
             | Assert { target: t, unwind: _, .. }
             | InlineAsm { destination: None, unwind: UnwindAction::Cleanup(t), .. }
@@ -211,6 +217,7 @@ impl TerminatorKind {
     pub fn unwind(&self) -> Option<&UnwindAction> {
         match *self {
             TerminatorKind::Goto { .. }
+            | TerminatorKind::Use { .. }
             | TerminatorKind::Return
             | TerminatorKind::Unreachable
             | TerminatorKind::Resume

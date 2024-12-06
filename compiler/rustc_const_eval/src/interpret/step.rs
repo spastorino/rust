@@ -521,6 +521,10 @@ impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
                 }
             }
 
+            Use { .. } => {
+                // TODO const eval
+            }
+
             TailCall { ref func, ref args, fn_span: _ } => {
                 let old_frame_idx = self.frame_idx();
 

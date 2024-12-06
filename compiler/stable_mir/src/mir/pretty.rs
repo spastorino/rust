@@ -176,6 +176,9 @@ fn pretty_terminator_head<W: Write>(writer: &mut W, terminator: &TerminatorKind)
             args_iter.try_for_each(|arg| write!(writer, ", {}", pretty_operand(arg)))?;
             write!(writer, ")")
         }
+        Use { place, destination, .. } => {
+            write!(writer, "{INDENT}{:?} = use({:?})", destination, place)
+        }
         Assert { cond, expected, msg, target: _, unwind: _ } => {
             write!(writer, "{INDENT}assert(")?;
             if !expected {
@@ -205,7 +208,7 @@ fn pretty_successor_labels(terminator: &TerminatorKind) -> Vec<String> {
         Call { target: Some(_), unwind: UnwindAction::Cleanup(_), .. } => {
             vec!["return".into(), "unwind".into()]
         }
-        Drop { unwind: _, .. } | Call { target: Some(_), unwind: _, .. } => vec!["return".into()],
+        Drop { unwind: _, .. } | Call { target: Some(_), unwind: _, .. } | Use { .. } => vec!["return".into()],
         Assert { unwind: UnwindAction::Cleanup(_), .. } => {
             vec!["success".into(), "unwind".into()]
         }

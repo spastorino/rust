@@ -250,6 +250,10 @@ pub trait MirVisitor {
                 }
                 self.visit_place(destination, PlaceContext::MUTATING, location);
             }
+            TerminatorKind::Use { place, destination, target: _ } => {
+                self.visit_place(place, PlaceContext::NON_MUTATING, location);
+                self.visit_place(destination, PlaceContext::MUTATING, location);
+            }
             TerminatorKind::InlineAsm { operands, .. } => {
                 for op in operands {
                     let InlineAsmOperand { in_value, out_place, raw_rpr: _ } = op;
