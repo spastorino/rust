@@ -1370,6 +1370,27 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 fn_span,
                 mergeable_succ(),
             ),
+
+            mir::TerminatorKind::Use { place, destination, target } => {
+                let def_id = get_clone_lang_fn();
+                let args = place.ty().ty;
+
+                let instance = ty::Instance::expect_resolve(bx.tcx(), bx.typing_env(), def_id, args, SPAN)
+                        .polymorphize(bx.tcx());
+                self
+                .codegen_call_terminator(
+                    helper,
+                    bx,
+                    terminator,
+                    func,
+                    args,
+                    destination,
+                    target,
+                    unwind,
+                    SPAN,
+                    mergeable_succ(),
+                ),
+
             mir::TerminatorKind::TailCall { .. } => {
                 // FIXME(explicit_tail_calls): implement tail calls in ssa backend
                 span_bug!(
