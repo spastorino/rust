@@ -1093,6 +1093,7 @@ impl<'tcx, Cx: TypeInformationCtxt<'tcx>, D: Delegate<'tcx>> ExprUseVisitor<'tcx
                         place.projections.clone(),
                     );
 
+                    debug!("HERE capture_info {:?}", capture_info);
                     match capture_info.capture_kind {
                         ty::UpvarCapture::ByValue => {
                             self.consume_or_copy(&place_with_id, place_with_id.hir_id);
