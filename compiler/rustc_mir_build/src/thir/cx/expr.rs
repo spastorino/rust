@@ -1153,7 +1153,7 @@ impl<'tcx> Cx<'tcx> {
             .temporary_scope(self.region_scope_tree, closure_expr.hir_id.local_id);
         let var_ty = place.base_ty;
 
-        // The result of capture analysis in `rustc_hir_analysis/check/upvar.rs`represents a captured path
+        // The result of capture analysis in `rustc_passes/src/upvar.rs` represents a captured path
         // as it's seen for use within the closure and not at the time of closure creation.
         //
         // That is we see expect to see it start from a captured upvar and not something that is local
@@ -1214,7 +1214,7 @@ impl<'tcx> Cx<'tcx> {
             .temporary_scope(self.region_scope_tree, closure_expr.hir_id.local_id);
 
         match upvar_capture {
-            ty::UpvarCapture::ByValue => captured_place_expr,
+            ty::UpvarCapture::ByValue | ty::UpvarCapture::ByUse => captured_place_expr,
             ty::UpvarCapture::ByRef(upvar_borrow) => {
                 let borrow_kind = match upvar_borrow {
                     ty::BorrowKind::Immutable => BorrowKind::Shared,
