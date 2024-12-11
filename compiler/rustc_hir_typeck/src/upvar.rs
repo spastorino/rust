@@ -2028,6 +2028,7 @@ impl<'tcx> euv::Delegate<'tcx> for InferBorrowKind<'tcx> {
 
     #[instrument(skip(self), level = "debug")]
     fn byuse(&mut self, place_with_id: &PlaceWithHirId<'tcx>, diag_expr_id: HirId) {
+        debug!("HERE calling byuse");
         let PlaceBase::Upvar(upvar_id) = place_with_id.place.base else { return };
         assert_eq!(self.closure_def_id, upvar_id.closure_expr_id);
 

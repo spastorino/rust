@@ -11,12 +11,12 @@ use rustc_middle::thir::*;
 use rustc_middle::ty::cast::{CastTy, mir_cast_kind};
 use rustc_middle::ty::layout::IntegerExt;
 use rustc_middle::ty::util::IntTypeExt;
-use rustc_middle::ty::{self, Ty, UpvarArgs};
+use rustc_middle::ty::{self, Ty, UpvarArgs, UpvarCapture};
 use rustc_span::source_map::Spanned;
 use rustc_span::{DUMMY_SP, Span};
 use tracing::debug;
 
-use crate::build::expr::as_place::PlaceBase;
+use crate::build::expr::as_place::{PlaceBase, find_capture_matching_projections};
 use crate::build::expr::category::{Category, RvalueFunc};
 use crate::build::{BlockAnd, BlockAndExtension, Builder, NeedsTemporary};
 
@@ -433,7 +433,73 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             // by reference captures use as_operand
                             Some(Category::Place) => {
                                 let place = unpack!(block = this.as_place(block, upvar));
-                                // FIXME how to return Operand::Use?
+                                match &upvar_expr.kind {
+                                    ExprKind::UpvarRef { var_hir_id, .. } => {
+                                        if let Some((_, capture)) =
+                                            find_capture_matching_projections(
+                                                &this.upvars,
+                                                *var_hir_id,
+                                                place.projection,
+                                            )
+                                        {
+                                            if capture.captured_place.info.capture_kind
+                                                == UpvarCapture::ByUse
+                                            {
+                                                let destination = this.temp(
+                                                    place.ty(&this.local_decls, this.tcx).ty,
+                                                    expr_span,
+                                                );
+                                                let operand = Operand::Move(destination);
+
+                                                let success = this.cfg.start_new_block();
+
+                                                let clone_trait = this
+                                                    .tcx
+                                                    .require_lang_item(LangItem::Clone, None);
+                                                let clone_fn = this
+                                                    .tcx
+                                                    .associated_item_def_ids(clone_trait)[0];
+                                                let ty = place.ty(&this.local_decls, this.tcx).ty;
+                                                let func = Operand::function_handle(
+                                                    this.tcx,
+                                                    clone_fn,
+                                                    [ty.into()],
+                                                    expr_span,
+                                                );
+
+                                                let ref_ty = Ty::new_imm_ref(
+                                                    this.tcx,
+                                                    this.tcx.lifetimes.re_erased,
+                                                    ty,
+                                                );
+                                                let ref_place = this.temp(ref_ty, expr_span);
+
+                                                this.cfg.terminate(
+                                                    block,
+                                                    source_info,
+                                                    TerminatorKind::Call {
+                                                        func,
+                                                        args: [Spanned {
+                                                            node: Operand::Move(Place::from(
+                                                                ref_place,
+                                                            )),
+                                                            span: DUMMY_SP,
+                                                        }]
+                                                        .into(),
+                                                        destination,
+                                                        target: Some(success),
+                                                        unwind: UnwindAction::Unreachable,
+                                                        call_source: CallSource::Misc,
+                                                        fn_span: expr_span,
+                                                    },
+                                                );
+
+                                                return operand;
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
                                 this.consume_by_copy_or_move(place)
                             }
                             _ => {
