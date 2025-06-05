@@ -334,14 +334,14 @@ fn optimize_use_clone<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>>(
                 args,
                 destination,
                 target,
-                call_source: mir::CallSource::Use,
+                call_source: call_source @ (mir::CallSource::Move | mir::CallSource::Use),
                 ..
             } = &bb.terminator().kind
             else {
                 continue;
             };
 
-            // CallSource::Use calls always use 1 argument.
+            // CallSource::Use | CallSource::Move calls always use 1 argument.
             assert_eq!(args.len(), 1);
             let arg = &args[0];
 
@@ -351,7 +351,7 @@ fn optimize_use_clone<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>>(
 
             let ty::Ref(_region, inner_ty, mir::Mutability::Not) = *arg_ty.kind() else { continue };
 
-            if !tcx.type_is_copy_modulo_regions(cx.typing_env(), inner_ty) {
+            if *call_source == mir::CallSource::Use && !tcx.type_is_copy_modulo_regions(cx.typing_env(), inner_ty) {
                 continue;
             }
 
@@ -359,13 +359,23 @@ fn optimize_use_clone<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>>(
 
             let destination_block = target.unwrap();
 
+            let rvalue = if *call_source == mir::CallSource::Move {
+                    mir::Rvalue::Use(mir::Operand::Move(
+                        arg_place.project_deeper(&[mir::ProjectionElem::Deref], tcx),
+                    ))
+            } else { // mir::CallSource::Use
+                    mir::Rvalue::Use(mir::Operand::Copy(
+                        arg_place.project_deeper(&[mir::ProjectionElem::Deref], tcx),
+                    ))
+            };
+
+            debug!("LAST-USE: optimized bb={:?} rvalue={:?}", bb, rvalue);
+
             bb.statements.push(mir::Statement::new(
                 bb.terminator().source_info,
                 mir::StatementKind::Assign(Box::new((
                     *destination,
-                    mir::Rvalue::Use(mir::Operand::Copy(
-                        arg_place.project_deeper(&[mir::ProjectionElem::Deref], tcx),
-                    )),
+                    rvalue,
                 ))),
             ));
 

@@ -1558,7 +1558,7 @@ rustc_index::newtype_index! {
 /// `Location` represents the position of the start of the statement; or, if
 /// `statement_index` equals the number of statements, then the start of the
 /// terminator.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, HashStable)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, HashStable, TyEncodable, TyDecodable)]
 pub struct Location {
     /// The block that the location is within.
     pub block: BasicBlock,

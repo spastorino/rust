@@ -28,7 +28,7 @@ pub fn ergonomic_clone_closure_use_cloned() -> Foo {
 
     let f2 = use || f;
 
-    f
+    f2()
 }
 
 pub fn ergonomic_clone_closure_copy() -> i32 {

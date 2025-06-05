@@ -25,6 +25,7 @@ use rustc_middle::mir::{
     AnalysisPhase, Body, CallSource, ClearCrossCrate, ConstOperand, ConstQualifs, LocalDecl,
     MirPhase, Operand, Place, ProjectionElem, Promoted, RuntimePhase, Rvalue, START_BLOCK,
     SourceInfo, Statement, StatementKind, TerminatorKind,
+    ConcreteOpaqueTypes, 
 };
 use rustc_middle::ty::{self, TyCtxt, TypeVisitableExt};
 use rustc_middle::util::Providers;
@@ -492,8 +493,8 @@ fn mir_drops_elaborated_and_const_checked(tcx: TyCtxt<'_>, def: LocalDefId) -> &
     }
 
     // We only need to borrowck non-synthetic MIR.
-    let tainted_by_errors = if !tcx.is_synthetic_mir(def) {
-        tcx.mir_borrowck(tcx.typeck_root_def_id(def.to_def_id()).expect_local()).err()
+    let borrowck_result = if !tcx.is_synthetic_mir(def) {
+        Some(tcx.mir_borrowck(tcx.typeck_root_def_id(def.to_def_id()).expect_local()))
     } else {
         None
     };
@@ -511,8 +512,39 @@ fn mir_drops_elaborated_and_const_checked(tcx: TyCtxt<'_>, def: LocalDefId) -> &
     let (body, _) = tcx.mir_promoted(def);
     let mut body = body.steal();
 
-    if let Some(error_reported) = tainted_by_errors {
-        body.tainted_by_errors = Some(error_reported);
+    if let Some(borrowck_result) = borrowck_result {
+        match borrowck_result {
+            Ok(ConcreteOpaqueTypes(_, last_uses)) => {
+                debug!("LAST-USE: def_id={:?}", def);
+                debug!("LAST-USE: root_def_id={:?}", tcx.typeck_root_def_id(def.to_def_id()).expect_local());
+                debug!("LAST-USE: last_uses={:?}", last_uses);
+                if tcx.features().ergonomic_clones() && tcx.typeck_root_def_id(def.to_def_id()).expect_local() == def {
+                    for last_use in last_uses {
+                        let Some(terminator) = body.stmt_at(*last_use).right() else {
+                            debug!("LAST-USE: last_use={:?} is not a terminator", last_use);
+                            continue
+                        };
+                        debug!("LAST-USE: last_use={:?} is a terminator.kind={:?}", last_use, terminator.kind); 
+
+                        let bb = last_use.block;
+                        let data = body.basic_blocks.as_mut().get_mut(bb).unwrap();
+                        debug!("LAST-USE: bb={:?} bb_data={:?}", bb, data);
+                        let TerminatorKind::Call {
+                            call_source: call_source @ CallSource::Use,
+                            ..
+                        } = &mut data.terminator_mut().kind else {
+                            debug!("LAST-USE: last_use={:?} not a use", last_use); 
+                            continue
+                        };
+                        debug!("LAST-USE: last_use={:?} optimized", last_use);
+                        *call_source = CallSource::Move;
+                    }
+                }
+            }
+            Err(err) => {
+                body.tainted_by_errors = Some(err);
+            }
+        }
     }
 
     // Also taint the body if it's within a top-level item that is not well formed.
@@ -787,6 +819,7 @@ fn inner_optimized_mir(tcx: TyCtxt<'_>, did: LocalDefId) -> Body<'_> {
 /// Fetch all the promoteds of an item and prepare their MIR bodies to be ready for
 /// constant evaluation once all generic parameters become known.
 fn promoted_mir(tcx: TyCtxt<'_>, def: LocalDefId) -> &IndexVec<Promoted, Body<'_>> {
+    debug!("HERE: promoted_mir");
     if tcx.is_constructor(def.to_def_id()) {
         return tcx.arena.alloc(IndexVec::new());
     }

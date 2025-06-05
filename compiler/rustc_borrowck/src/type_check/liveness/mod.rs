@@ -1,5 +1,5 @@
 use itertools::{Either, Itertools};
-use rustc_data_structures::fx::FxHashSet;
+use rustc_data_structures::fx::{FxHashSet, FxIndexSet};
 use rustc_middle::mir::visit::{TyContext, Visitor};
 use rustc_middle::mir::{Body, Local, Location, SourceInfo};
 use rustc_middle::span_bug;
@@ -13,6 +13,7 @@ use super::TypeChecker;
 use crate::constraints::OutlivesConstraintSet;
 use crate::polonius::PoloniusLivenessContext;
 use crate::region_infer::values::LivenessValues;
+use crate::type_check::liveness::local_use_map::LocalUseMap;
 use crate::universal_regions::UniversalRegions;
 
 mod local_use_map;
@@ -66,6 +67,234 @@ pub(super) fn generate<'tcx>(
         &mut typeck.polonius_liveness,
         typeck.body,
     );
+
+    if typeck.tcx().features().ergonomic_clones() {
+        let v = compute_last_use_for_all_locals(typeck, location_map);
+        debug!("compute_last_use_for_all_locals = {:?}", v);
+        typeck.last_uses = v;
+    }
+}
+
+fn compute_last_use_for_all_locals<'tcx>(
+    typeck: &mut TypeChecker<'_, 'tcx>,
+    location_map: &DenseLocationMap,
+) -> Vec<Location> {
+    let all_locals: Vec<_> =
+        typeck.body.local_decls.iter_enumerated().map(|(local, _)| local).collect();
+    let local_use_map = &LocalUseMap::build(&all_locals, location_map, typeck.body);
+    all_locals
+        .iter()
+        .flat_map(|local| compute_last_use_for(typeck, location_map, local_use_map, *local))
+        .collect()
+}
+
+/// Computes all points where local is "use live" -- meaning its
+/// current value may be used later (except by a drop). This is
+/// done by walking backwards from each use of `local` until we
+/// find a `def` of local.
+///
+/// Requires `add_defs_for(local)` to have been executed.
+fn compute_last_use_for<'tcx>(
+    typeck: &mut TypeChecker<'_, 'tcx>,
+    location_map: &DenseLocationMap,
+    local_use_map: &LocalUseMap,
+    local: Local,
+) -> Vec<Location> {
+    let body = typeck.body;
+    let liveness_constraints = &typeck.constraints.liveness_constraints;
+
+    debug!("compute_last_use_for START");
+    debug!("compute_last_use_for(local={:?})", local);
+
+    // Definitions and uses must be ordered from last to first.
+    let local_defs: Vec<_> = local_use_map.defs(local).collect();
+    debug!("compute_last_use_for(local_defs={:?})", local_defs);
+    let local_uses: Vec<_> = local_use_map.uses(local).collect();
+    debug!("compute_last_use_for(local_uses={:?})", local_uses);
+    let mut visited = FxIndexSet::default();
+
+    for local_use in local_uses.iter() {
+        debug!("compute_last_use_for(local_use={:?})", local_use);
+        // Skip definitions, are the definitions here?
+        if local_defs.iter().find(|def| **def == *local_use).is_some() {
+            debug!("compute_last_use_for: skip local_use");
+            continue;
+        }
+
+        let mut stack = Vec::new();
+        stack.push(*local_use);
+
+        while let Some(p) = stack.pop() {
+            debug!("compute_last_use_for(p={:?})", p);
+            let block_start = location_map.to_block_start(p);
+            debug!("compute_last_use_for(block_start={:?})", block_start);
+            // This was originally block_start..=p but I want to skip p to avoid always getting
+            // the same use.
+            let start_to_use = block_start..p;
+            debug!("compute_last_use_for(start_to_use={:?})", start_to_use);
+            let previous_def = local_defs.iter().find(|def| start_to_use.contains(*def));
+            debug!("compute_last_use_for(previous_def={:?})", previous_def);
+            let previous_use = local_uses.iter().find(|use_| start_to_use.contains(*use_));
+            debug!("compute_last_use_for(previous_use={:?})", previous_use);
+
+            // Is there a use before a definition? if there isn't break out of the loop and
+            // continue with the next local_use
+            if let Some(def) = previous_def {
+                if let Some(use_) = previous_use {
+                    if *def >= *use_ {
+                        debug!("compute_last_use_for: skip found definition before use");
+                        break;
+                    }
+                } else {
+                    debug!("compute_last_use_for: skip found definition and no use");
+                    break;
+                }
+            }
+
+            if let Some(use_) = previous_use {
+                debug!("compute_last_use_for: visit use={:?}", use_);
+                if visited.insert(*use_) {
+                    debug!("compute_last_use_for: stack.push({:?})", use_);
+                    stack.push(*use_);
+                } else {
+                    debug!("compute_last_use_for: {:?} already in stack", use_);
+                }
+            } else {
+                let block = location_map.to_location(block_start).block;
+                debug!("compute_last_use_for(block={:?})", block);
+                let predecessors: Vec<_> = body.basic_blocks.predecessors()[block]
+                    .iter()
+                    .map(|&pred_bb| body.terminator_loc(pred_bb))
+                    .map(|pred_loc| location_map.point_from_location(pred_loc))
+                    .collect();
+                debug!("compute_last_use_for(predecessors={:?})", predecessors);
+                for p in &predecessors {
+                    debug!("compute_last_use_for: visit p={:?}", *p);
+                    if visited.insert(*p) {
+                        debug!("compute_last_use_for: stack.push({:?})", *p);
+                        stack.push(*p);
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 1. Get all the borrows that are assigned to the given local
+    // For example: if we are looking for last uses of _3 in the following example
+    // _3 = &1
+    // Terminator::clone(_3)
+    // ...
+    //_10 = &1
+    // ...
+    //
+    // We get _1 here.
+    debug!("compute_last_use_for(local_uses={:?})", local_uses);
+    debug!("compute_last_use_for(local={:?})", local);
+    debug!("compute_last_use_for(visited={:?})", visited);
+    let borrowed_locals = typeck
+        .borrow_set
+        .location_map()
+        .iter()
+        .filter_map(|(_, borrow_data)| {
+            if borrow_data.assigned_place.local == local {
+                Some(borrow_data.borrowed_place.local)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // Step 2. Get all the regions for the borrowed local captured in the previous step.
+    // In the previous code
+    // _3 = &1
+    // Terminator::clone(_3)
+    // ...
+    //_10 = &1
+    // ...
+    //
+    // We get both regions, the one originating at _3 = &1 and _10 = &1
+    debug!("compute_last_use_for(borrowed_locals={:?})", borrowed_locals);
+    let borrowed_regions = typeck.borrow_set.location_map().iter().filter_map(|(_, borrow_data)| {
+        debug!("compute_last_use_for(borrow_data.borrowed_place.local={:?})", borrow_data.borrowed_place.local);
+        if borrowed_locals.contains(&borrow_data.borrowed_place.local) {
+            debug!("compute_last_use_for(borrow_data.borrowed_place.local={:?} mapped to region={:?})", borrow_data.borrowed_place.local, borrow_data.region);
+            Some(borrow_data.region)
+        } else {
+            debug!("compute_last_use_for(borrow_data.borrowed_place.local={:?} not mapped)", borrow_data.borrowed_place.local);
+            None
+        }
+    }).collect::<Vec<_>>();
+
+    // This just prints things for debugging purposes.
+    debug!(
+        "compute_last_use_for(typeck.borrow_set.location_map={:?}",
+        typeck.borrow_set.location_map()
+    );
+    debug!("compute_last_use_for(typeck.borrow_set.local_map={:?}", typeck.borrow_set.local_map());
+    debug!(
+        "compute_last_use_for(liveness_constraints.points().rows()={:?}",
+        liveness_constraints.points().rows().collect::<Vec<_>>()
+    );
+    for region_vid in &borrowed_regions {
+        debug!("compute_last_use_for(points for region={:?}", region_vid);
+        if let Some(points) = liveness_constraints.points().row(*region_vid) {
+            for point in points.iter() {
+                debug!("compute_last_use_for(point={:?}", point);
+            }
+        }
+    }
+
+    let result = local_uses
+        .iter()
+        .cloned()
+        .filter(|local_use| {
+            !visited.contains(local_use)
+                // Step 3. Given the previously calculated regions we get from liveness_constraints
+                // the live points for those regions and just check if the region is live after the
+                // point where the local_use was found. If so, we can't move.
+                //
+                // In the previous code
+                // _3 = &1
+                // Terminator::clone(_3)
+                // ...
+                //_10 = &1
+                // ...
+                //
+                // Last use is in line Terminator::clone(_3) location but through borrows we find
+                // location _10 = &1, which is last then we can't move.
+                && borrowed_regions
+                    .iter()
+                    .find(|region_vid| {
+                        liveness_constraints
+                            .points()
+                            .row(**region_vid)
+                            .map(|interval| {
+                                interval.iter().find(|point| *point >= *local_use).is_some()
+                            })
+                            .unwrap_or(false)
+                    })
+                    .is_none()
+                // Step 4. Given the previously calculated regions we get from liveness_constraints
+                // the live points for those regions and just check if the region is live after the
+                // point where the local_use was found. If so, we can't move.
+                //
+                // In the previous code
+                // _3 = &1
+                // Terminator::clone(_3)
+                // ...
+                //
+                // Last use is in line Terminator::clone(_3) location but through borrows we find
+                // location _10 = &1, which is last then we can't move.
+                && borrowed_locals.iter().find(|borrowed_local| {
+                    local_use_map.uses(**borrowed_local).max().map(|borrowed_local| borrowed_local >= *local_use).unwrap_or(false)
+                }).is_none()
+        })
+        .map(|point_index| location_map.to_location(point_index))
+        .collect();
+
+    debug!("compute_last_use_for(result={:?})", result);
+    debug!("compute_last_use_for END");
+    result
 }
 
 // The purpose of `compute_relevant_live_locals` is to define the subset of `Local`

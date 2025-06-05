@@ -103,11 +103,11 @@ impl<'tcx> BorrowCheckRootCtxt<'tcx> {
         &self.get_or_insert_nested(nested_body_def_id).used_mut_upvars
     }
 
-    pub(super) fn finalize(self) -> Result<&'tcx ConcreteOpaqueTypes<'tcx>, ErrorGuaranteed> {
+    pub(super) fn finalize(self) -> Result<ConcreteOpaqueTypes<'tcx>, ErrorGuaranteed> {
         if let Some(guar) = self.tainted_by_errors {
             Err(guar)
         } else {
-            Ok(self.tcx.arena.alloc(self.concrete_opaque_types))
+            Ok(self.concrete_opaque_types)
         }
     }
 }

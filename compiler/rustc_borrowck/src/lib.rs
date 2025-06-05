@@ -121,7 +121,7 @@ fn mir_borrowck(
         Err(guar)
     } else if input_body.should_skip() {
         debug!("Skipping borrowck because of injected body");
-        let opaque_types = ConcreteOpaqueTypes(Default::default());
+        let opaque_types = ConcreteOpaqueTypes(Default::default(), Vec::new());
         Ok(tcx.arena.alloc(opaque_types))
     } else {
         let mut root_cx = BorrowCheckRootCtxt::new(tcx, def, None);
@@ -133,11 +133,14 @@ fn mir_borrowck(
             root_cx.get_or_insert_nested(def_id);
         }
 
-        let PropagatedBorrowCheckResults { closure_requirements, used_mut_upvars } =
+        let PropagatedBorrowCheckResults { closure_requirements, used_mut_upvars, last_uses } =
             do_mir_borrowck(&mut root_cx, def);
         debug_assert!(closure_requirements.is_none());
         debug_assert!(used_mut_upvars.is_empty());
-        root_cx.finalize()
+        let mut concrete = root_cx.finalize()?;
+        concrete.1 = last_uses;
+
+        Ok(tcx.arena.alloc(concrete))
     }
 }
 
@@ -147,6 +150,7 @@ fn mir_borrowck(
 struct PropagatedBorrowCheckResults<'tcx> {
     closure_requirements: Option<ClosureRegionRequirements<'tcx>>,
     used_mut_upvars: SmallVec<[FieldIdx; 8]>,
+    last_uses: Vec<Location>,
 }
 
 /// After we borrow check a closure, we are left with various
@@ -329,6 +333,7 @@ fn do_mir_borrowck<'tcx>(
         opt_closure_req,
         nll_errors,
         polonius_diagnostics,
+        last_uses,
     } = nll::compute_regions(
         root_cx,
         &infcx,
@@ -475,6 +480,7 @@ fn do_mir_borrowck<'tcx>(
     let result = PropagatedBorrowCheckResults {
         closure_requirements: opt_closure_req,
         used_mut_upvars: mbcx.used_mut_upvars,
+        last_uses,
     };
 
     if let Some(consumer) = &mut root_cx.consumer {

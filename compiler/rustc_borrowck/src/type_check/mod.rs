@@ -161,6 +161,7 @@ pub(crate) fn type_check<'tcx>(
         borrow_set,
         constraints: &mut constraints,
         polonius_liveness,
+        last_uses: Vec::new(),
     };
 
     typeck.check_user_type_annotations();
@@ -169,6 +170,8 @@ pub(crate) fn type_check<'tcx>(
     typeck.check_signature_annotation();
 
     liveness::generate(&mut typeck, &location_map, move_data);
+
+    let last_uses = typeck.last_uses.clone();
 
     let opaque_type_values =
         opaque_types::take_opaques_and_register_member_constraints(&mut typeck);
@@ -187,6 +190,7 @@ pub(crate) fn type_check<'tcx>(
         universal_region_relations,
         opaque_type_values,
         polonius_context,
+        last_uses,
     }
 }
 
@@ -227,6 +231,7 @@ struct TypeChecker<'a, 'tcx> {
     constraints: &'a mut MirTypeckRegionConstraints<'tcx>,
     /// When using `-Zpolonius=next`, the liveness helper data used to create polonius constraints.
     polonius_liveness: Option<PoloniusLivenessContext>,
+    last_uses: Vec<Location>,
 }
 
 /// Holder struct for passing results from MIR typeck to the rest of the non-lexical regions
@@ -236,6 +241,7 @@ pub(crate) struct MirTypeckResults<'tcx> {
     pub(crate) universal_region_relations: Frozen<UniversalRegionRelations<'tcx>>,
     pub(crate) opaque_type_values: FxIndexMap<OpaqueTypeKey<'tcx>, OpaqueHiddenType<'tcx>>,
     pub(crate) polonius_context: Option<PoloniusContext>,
+    pub(crate) last_uses: Vec<Location>,
 }
 
 /// A collection of region constraints that must be satisfied for the

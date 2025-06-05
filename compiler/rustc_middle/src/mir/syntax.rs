@@ -656,6 +656,8 @@ pub enum CallSource {
     Misc,
     /// Use of value, generating a clone function call
     Use,
+    /// Use of value that is known to be the last one and would generate a move statement
+    Move,
     /// Normal function call, no special source
     Normal,
 }

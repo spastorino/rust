@@ -29,7 +29,7 @@ use crate::type_check::{self, MirTypeckResults};
 use crate::universal_regions::UniversalRegions;
 use crate::{
     BorrowCheckRootCtxt, BorrowckInferCtxt, ClosureOutlivesSubject, ClosureRegionRequirements,
-    polonius, renumber,
+    Location, polonius, renumber,
 };
 
 /// The output of `nll::compute_regions`. This includes the computed `RegionInferenceContext`, any
@@ -44,6 +44,7 @@ pub(crate) struct NllOutput<'tcx> {
     /// When using `-Zpolonius=next`: the data used to compute errors and diagnostics, e.g.
     /// localized typeck and liveness constraints.
     pub polonius_diagnostics: Option<PoloniusDiagnosticsContext>,
+    pub last_uses: Vec<Location>,
 }
 
 /// Rewrites the regions in the MIR to use NLL variables, also scraping out the set of universal
@@ -99,6 +100,7 @@ pub(crate) fn compute_regions<'tcx>(
         universal_region_relations,
         opaque_type_values,
         polonius_context,
+        last_uses,
     } = type_check::type_check(
         root_cx,
         infcx,
@@ -182,6 +184,7 @@ pub(crate) fn compute_regions<'tcx>(
         opt_closure_req: closure_region_requirements,
         nll_errors,
         polonius_diagnostics,
+        last_uses,
     }
 }
 

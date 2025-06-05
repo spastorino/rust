@@ -12,6 +12,7 @@ use rustc_macros::{HashStable, TyDecodable, TyEncodable, TypeFoldable, TypeVisit
 use rustc_span::{Span, Symbol};
 
 use super::{ConstValue, SourceInfo};
+use crate::mir::Location;
 use crate::ty::{self, CoroutineArgsExt, OpaqueHiddenType, Ty};
 
 rustc_index::newtype_index! {
@@ -88,7 +89,10 @@ impl Debug for CoroutineLayout<'_> {
 /// by this function. Unlike the value in `TypeckResults`, this has
 /// unerased regions.
 #[derive(Default, Debug, TyEncodable, TyDecodable, HashStable)]
-pub struct ConcreteOpaqueTypes<'tcx>(pub FxIndexMap<LocalDefId, OpaqueHiddenType<'tcx>>);
+pub struct ConcreteOpaqueTypes<'tcx>(
+    pub FxIndexMap<LocalDefId, OpaqueHiddenType<'tcx>>,
+    pub Vec<Location>,
+);
 
 /// The result of the `mir_const_qualif` query.
 ///
